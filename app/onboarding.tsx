@@ -65,6 +65,19 @@ export default function OnboardingScreen() {
 
   const handleNext = () => {
     if (currentIndex < slides.length - 1) {
+      Animated.sequence([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
       const nextIndex = currentIndex + 1;
       setCurrentIndex(nextIndex);
       scrollViewRef.current?.scrollTo({ x: width * nextIndex, animated: true });
@@ -73,9 +86,31 @@ export default function OnboardingScreen() {
     }
   };
 
+  const handleSkip = () => {
+    handleGetStarted();
+  };
+
   const handleGetStarted = async () => {
     await completeOnboarding();
     router.replace('/login' as any);
+  };
+
+  const handleDotPress = (index: number) => {
+    Animated.sequence([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    setCurrentIndex(index);
+    scrollViewRef.current?.scrollTo({ x: width * index, animated: true });
   };
 
   return (
@@ -89,30 +124,34 @@ export default function OnboardingScreen() {
         style={styles.scrollView}
       >
         {slides.map((slide, index) => (
-          <View key={slide.id} style={styles.slide}>
+          <Animated.View
+            key={slide.id}
+            style={[
+              styles.slide,
+              { opacity: currentIndex === index ? fadeAnim : 1 },
+            ]}
+          >
             <LinearGradient
               colors={slide.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
               style={styles.iconContainer}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              {/* <slide.icon size={80} color={Colors.textWhite} strokeWidth={1.5} /> */}
-              {(() => {
-                const Icon = slide.icon as React.ComponentType<any>;
-                return <Icon size={80} color={Colors.textWhite} strokeWidth={1.5} />;
-              })()}
+              <slide.icon size={80} color={Colors.textWhite} strokeWidth={1.5} />
             </LinearGradient>
+
             <Text style={styles.title}>{slide.title}</Text>
             <Text style={styles.description}>{slide.description}</Text>
-          </View>
+          </Animated.View>
         ))}
       </ScrollView>
 
       <View style={styles.footer}>
         <View style={styles.pagination}>
           {slides.map((_, index) => (
-            <View
+            <TouchableOpacity
               key={index}
+              onPress={() => handleDotPress(index)}
               style={[
                 styles.dot,
                 currentIndex === index && styles.dotActive,
@@ -121,18 +160,26 @@ export default function OnboardingScreen() {
           ))}
         </View>
 
-        <TouchableOpacity onPress={handleNext} style={styles.nextButton}>
-          <LinearGradient
-            colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
-            style={styles.nextButtonGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-          >
-            <Text style={styles.nextText}>
-              {currentIndex === slides.length - 1 ? 'Get Started' : 'Next'}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
+        <View style={styles.buttonContainer}>
+          {currentIndex < slides.length - 1 && (
+            <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
+              <Text style={styles.skipText}>Skip</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity onPress={handleNext} style={styles.nextButton}>
+            <LinearGradient
+              colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+              style={styles.nextButtonGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <Text style={styles.nextText}>
+                {currentIndex === slides.length - 1 ? 'Get Started' : 'Next'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -160,6 +207,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 40,
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
   title: {
     fontSize: 28,
@@ -167,12 +219,14 @@ const styles = StyleSheet.create({
     color: Colors.text,
     textAlign: 'center',
     marginBottom: 16,
+    paddingHorizontal: 20,
   },
   description: {
     fontSize: 16,
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
+    paddingHorizontal: 10,
   },
   footer: {
     paddingHorizontal: 30,
@@ -195,9 +249,30 @@ const styles = StyleSheet.create({
     width: 24,
     backgroundColor: Colors.primary,
   },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  skipButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  skipText: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+  },
   nextButton: {
+    flex: 1,
+    marginLeft: 16,
     borderRadius: 12,
     overflow: 'hidden',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   nextButtonGradient: {
     paddingVertical: 16,

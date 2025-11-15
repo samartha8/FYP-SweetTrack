@@ -1,37 +1,55 @@
 const Colors = {
-  primary: '#4A90E2',
-  secondary: '#50C878',
+  primary: '#007AFF',
+  primaryDark: '#388E3C',
+  primaryLight: '#81C784',
+  
+  secondary: '#2196F3',
+  secondaryDark: '#1976D2',
+  secondaryLight: '#64B5F6',
+  
+  success: '#4CAF50',
+  warning: '#FF9800',
+  error: '#F44336',
+  info: '#2196F3',
+  
   background: '#FFFFFF',
-  backgroundSecondary: '#F5F5F5',
-  text: '#1A1A1A',
-  textSecondary: '#666666',
-  textLight: '#999999',
+  backgroundSecondary: '#F5F7FA',
+  backgroundTertiary: '#E8EEF3',
+  
+  text: '#2C3E50',
+  textSecondary: '#6B7280',
+  textLight: '#95A5A6',
   textWhite: '#FFFFFF',
-  border: '#E0E0E0',
+  
+  border: '#E5E7EB',
   borderLight: '#F0F0F0',
+  
   card: '#FFFFFF',
-  cardShadow: '#000000',
-  error: '#E74C3C',
-  warning: '#F39C12',
-  success: '#27AE60',
-  primaryLight: '#E3F2FD',
+  cardShadow: 'rgba(0, 0, 0, 0.08)',
+  
+  overlay: 'rgba(0, 0, 0, 0.5)',
+  
   gradient: {
-    primary: ['#4A90E2', '#357ABD'],
-    secondary: ['#50C878', '#3FA861'],
-    error: ['#E74C3C', '#C0392B'],
-    warning: ['#F39C12', '#E67E22'],
-    success: ['#27AE60', '#229954'],
+    primary: ['#4CAF50', '#81C784'],
+    secondary: ['#2196F3', '#64B5F6'],
+    success: ['#4CAF50', '#66BB6A'],
+    warning: ['#FF9800', '#FFB74D'],
+    error: ['#F44336', '#E57373'],
   },
+  
   risk: {
-    low: '#27AE60',
-    medium: '#F39C12',
-    high: '#E74C3C',
+    low: '#4CAF50',
+    moderate: '#FF9800',
+    high: '#F44336',
   },
+  
   chart: {
-    bmi: '#4A90E2',
-    glucose: '#50C878',
-    pressure: '#E74C3C',
+    glucose: '#9C27B0',
+    bp: '#F44336',
+    cholesterol: '#FF9800',
+    bmi: '#2196F3',
+    heart: '#E91E63',
   },
-};
+} as const;
 
 export default Colors;
