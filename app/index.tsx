@@ -6,14 +6,21 @@ import Colors from '@/constants/colors';
 
 export default function IndexScreen() {
   const router = useRouter();
-  const { isLoading } = useUser();
+  const { isLoading, hasOnboarded, hasHealthSetup, user } = useUser();
 
   useEffect(() => {
     if (!isLoading) {
-      // Always show onboarding first
-      router.replace('/onboarding' as any);
+      if (!hasOnboarded) {
+        router.replace('/onboarding' as any);
+      } else if (!user) {
+        router.replace('/login' as any);
+      } else if (!hasHealthSetup) {
+        router.replace('/health-setup' as any);
+      } else {
+        router.replace('/(tabs)/home' as any);
+      }
     }
-  }, [isLoading, router]);
+  }, [isLoading, hasOnboarded, hasHealthSetup, user, router]);
 
   return (
     <View style={styles.container}>
