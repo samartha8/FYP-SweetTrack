@@ -11,7 +11,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const { login, hasHealthSetup } = useUser();
+  const { login } = useUser();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -23,11 +23,8 @@ export default function LoginScreen() {
     setIsLoading(false);
 
     if (success) {
-      if (!hasHealthSetup) {
-        router.replace('/health-setup' as any);
-      } else {
-        router.replace('/(tabs)/home' as any);
-      }
+      // Returning user - go directly to home (they already did health setup during signup)
+      router.replace('/(tabs)/home' as any);
     }
   };
 

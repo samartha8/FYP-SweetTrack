@@ -81,10 +81,10 @@ app/index.tsx (Entry Point)
      - Password
    - **Actions:**
      - Login button → calls `login(email, password)`
-     - On success:
-       - If `hasHealthSetup` is false → redirects to `/health-setup`
-       - If `hasHealthSetup` is true → redirects to `/(tabs)/home`
+     - **Dummy Login (Current):** Accepts any email and password for testing
+     - On success → redirects directly to `/(tabs)/home` (returning users skip health setup)
      - "Create New Account" → navigates to `/signup`
+   - **Note:** Returning users already completed health setup during signup, so they go directly to home
 
    #### **Signup Screen** (`app/signup.tsx`)
    - **Fields:**
