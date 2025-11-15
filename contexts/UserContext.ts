@@ -11,12 +11,38 @@ export type User = {
   height?: number;
   weight?: number;
   bmi?: number;
+  familyHistory?: string;
+  previousDiagnosis?: string;
+  currentMedication?: string;
+  physicalActivityDays?: number;
+  smoking?: string;
+  alcohol?: string;
+  fastingGlucose?: number;
+  bloodPressure?: { systolic: number; diastolic: number };
+};
+
+export type HealthMetrics = {
+  steps: number;
+  water: number;
+  sleep: number;
+  calories: number;
+};
+
+export type DailyGoals = {
+  steps: number;
+  water: number;
+  sleep: number;
+  calories: number;
 };
 
 const STORAGE_KEYS = {
   USER: '@sweettrack_user',
   HAS_ONBOARDED: '@sweettrack_onboarded',
   HAS_HEALTH_SETUP: '@sweettrack_health_setup',
+  HEALTH_METRICS: '@sweettrack_health_metrics',
+  DAILY_GOALS: '@sweettrack_daily_goals',
+  REWARDS_POINTS: '@sweettrack_rewards_points',
+  STREAK: '@sweettrack_streak',
 };
 
 export const [UserProvider, useUser] = createContextHook(() => {
@@ -24,6 +50,20 @@ export const [UserProvider, useUser] = createContextHook(() => {
   const [hasOnboarded, setHasOnboarded] = useState<boolean>(false);
   const [hasHealthSetup, setHasHealthSetup] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [healthMetrics, setHealthMetrics] = useState<HealthMetrics>({
+    steps: 0,
+    water: 0,
+    sleep: 0,
+    calories: 0,
+  });
+  const [dailyGoals, setDailyGoals] = useState<DailyGoals>({
+    steps: 10000,
+    water: 8,
+    sleep: 8,
+    calories: 2000,
+  });
+  const [rewardsPoints, setRewardsPoints] = useState<number>(0);
+  const [streak, setStreak] = useState<number>(0);
 
   useEffect(() => {
     loadUserData();
@@ -31,15 +71,31 @@ export const [UserProvider, useUser] = createContextHook(() => {
 
   const loadUserData = async () => {
     try {
-      const [storedUser, storedOnboarded, storedHealthSetup] = await Promise.all([
+      const [
+        storedUser,
+        storedOnboarded,
+        storedHealthSetup,
+        storedMetrics,
+        storedGoals,
+        storedPoints,
+        storedStreak,
+      ] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.USER),
         AsyncStorage.getItem(STORAGE_KEYS.HAS_ONBOARDED),
         AsyncStorage.getItem(STORAGE_KEYS.HAS_HEALTH_SETUP),
+        AsyncStorage.getItem(STORAGE_KEYS.HEALTH_METRICS),
+        AsyncStorage.getItem(STORAGE_KEYS.DAILY_GOALS),
+        AsyncStorage.getItem(STORAGE_KEYS.REWARDS_POINTS),
+        AsyncStorage.getItem(STORAGE_KEYS.STREAK),
       ]);
 
       if (storedUser) setUser(JSON.parse(storedUser));
       if (storedOnboarded) setHasOnboarded(JSON.parse(storedOnboarded));
       if (storedHealthSetup) setHasHealthSetup(JSON.parse(storedHealthSetup));
+      if (storedMetrics) setHealthMetrics(JSON.parse(storedMetrics));
+      if (storedGoals) setDailyGoals(JSON.parse(storedGoals));
+      if (storedPoints) setRewardsPoints(JSON.parse(storedPoints));
+      if (storedStreak) setStreak(JSON.parse(storedStreak));
     } catch (error) {
       console.error('Error loading user data:', error);
     } finally {
@@ -108,15 +164,43 @@ export const [UserProvider, useUser] = createContextHook(() => {
     }
   }, [user]);
 
+  const updateHealthMetrics = useCallback(async (metrics: Partial<HealthMetrics>) => {
+    const updated = { ...healthMetrics, ...metrics };
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.HEALTH_METRICS, JSON.stringify(updated));
+      setHealthMetrics(updated);
+    } catch (error) {
+      console.error('Error updating health metrics:', error);
+    }
+  }, [healthMetrics]);
+
+  const updateDailyGoals = useCallback(async (goals: Partial<DailyGoals>) => {
+    const updated = { ...dailyGoals, ...goals };
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.DAILY_GOALS, JSON.stringify(updated));
+      setDailyGoals(updated);
+    } catch (error) {
+      console.error('Error updating daily goals:', error);
+    }
+  }, [dailyGoals]);
+
   return useMemo(() => ({
     user,
     hasOnboarded,
     hasHealthSetup,
     isLoading,
+    healthMetrics,
+    dailyGoals,
+    rewardsPoints,
+    streak,
     completeOnboarding,
     completeHealthSetup,
     login,
     signup,
     updateUser,
-  }), [user, hasOnboarded, hasHealthSetup, isLoading, completeOnboarding, completeHealthSetup, login, signup, updateUser]);
+    updateHealthMetrics,
+    updateDailyGoals,
+  }), [user, hasOnboarded, hasHealthSetup, isLoading, healthMetrics, dailyGoals, rewardsPoints, 
+    streak, completeOnboarding, completeHealthSetup, login, signup, updateUser, 
+    updateHealthMetrics, updateDailyGoals]);
 });
