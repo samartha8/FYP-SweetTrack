@@ -53,6 +53,7 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.riskCard}
           activeOpacity={0.8}
+          onPress={() => router.push('/prediction' as any)}
         >
           <LinearGradient
             colors={[riskColor, riskColor + '80'] as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
@@ -77,25 +78,30 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Today&apos;s Progress</Text>
-            <TouchableOpacity>
-              <TrendingUp size={24} color={Colors.primary} strokeWidth={2} />
+            <TouchableOpacity onPress={() => router.push('/progress' as any)}>
+              <Text style={styles.sectionLink}>View All</Text>
             </TouchableOpacity>
           </View>
+
           <View style={styles.statsGrid}>
             {quickStats.map((stat, index) => {
-              const Icon = stat.icon;
               const progress = Math.min((stat.value / stat.goal) * 100, 100);
+              const Icon = stat.icon;
+
               return (
                 <View key={index} style={styles.statCard}>
                   <View style={[styles.statIconContainer, { backgroundColor: stat.color + '20' }]}>
                     <Icon size={24} color={stat.color} strokeWidth={2} />
                   </View>
-                  <Text style={styles.statValue}>{stat.value}</Text>
+                  <Text style={styles.statValue}>
+                    {stat.value}
+                    {stat.unit && <Text style={styles.statUnit}> {stat.unit}</Text>}
+                  </Text>
                   <Text style={styles.statLabel}>{stat.label}</Text>
-                  <View style={styles.progressBarContainer}>
-                    <View style={[styles.progressBar, { width: `${progress}%`, backgroundColor: stat.color }]} />
+                  <View style={styles.progressBar}>
+                    <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: stat.color }]} />
                   </View>
-                  <Text style={styles.statGoal}>{stat.goal} {stat.unit}</Text>
+                  <Text style={styles.statGoal}>Goal: {stat.goal}</Text>
                 </View>
               );
             })}
@@ -128,6 +134,47 @@ export default function HomeScreen() {
             })}
           </View>
         </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Rewards Summary</Text>
+          <View style={styles.rewardsCard}>
+            <View style={styles.rewardsRow}>
+              <View style={styles.rewardItem}>
+                <Text style={styles.rewardValue}>{rewardsPoints}</Text>
+                <Text style={styles.rewardLabel}>Points</Text>
+              </View>
+              <View style={styles.rewardDivider} />
+              <View style={styles.rewardItem}>
+                <Text style={styles.rewardValue}>{streak}</Text>
+                <Text style={styles.rewardLabel}>Streak</Text>
+              </View>
+              <View style={styles.rewardDivider} />
+              <View style={styles.rewardItem}>
+                <Text style={styles.rewardValue}>3</Text>
+                <Text style={styles.rewardLabel}>Badges</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.rewardsButton}
+              onPress={() => router.push('/(tabs)/rewards' as any)}
+            >
+              <Text style={styles.rewardsButtonText}>View All Rewards</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Health Tips</Text>
+          <View style={styles.tipCard}>
+            <TrendingUp size={24} color={Colors.primary} strokeWidth={2} />
+            <View style={styles.tipContent}>
+              <Text style={styles.tipTitle}>Stay Hydrated</Text>
+              <Text style={styles.tipDescription}>
+                Drink at least 8 glasses of water daily to maintain optimal health and energy levels.
+              </Text>
+            </View>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -136,57 +183,59 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.backgroundSecondary,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 100,
+    paddingBottom: 30,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    backgroundColor: Colors.background,
   },
   greeting: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '700' as const,
     color: Colors.text,
-    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: Colors.textSecondary,
+    marginTop: 4,
   },
   streakContainer: {
     alignItems: 'center',
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: Colors.primary + '20',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderRadius: 12,
   },
   streakNumber: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '700' as const,
     color: Colors.primary,
   },
   streakLabel: {
     fontSize: 12,
     color: Colors.primary,
-    fontWeight: '600',
+    marginTop: 2,
   },
   riskCard: {
-    borderRadius: 16,
+    marginHorizontal: 20,
+    marginTop: 20,
+    borderRadius: 20,
     overflow: 'hidden',
-    marginBottom: 24,
     shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
   },
   riskGradient: {
     padding: 24,
@@ -198,34 +247,37 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   riskBadge: {
-    backgroundColor: Colors.textWhite + '30',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
   },
   riskBadgeText: {
-    color: Colors.textWhite,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '700' as const,
+    color: Colors.textWhite,
   },
   riskScore: {
     fontSize: 48,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.textWhite,
     marginBottom: 4,
   },
   riskLabel: {
     fontSize: 16,
     color: Colors.textWhite,
-    marginBottom: 8,
+    opacity: 0.9,
+    marginBottom: 12,
   },
   riskDescription: {
     fontSize: 14,
     color: Colors.textWhite,
-    opacity: 0.9,
+    opacity: 0.8,
+    lineHeight: 20,
   },
   section: {
-    marginBottom: 32,
+    marginTop: 24,
+    paddingHorizontal: 20,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -235,21 +287,30 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.text,
+  },
+  sectionLink: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.primary,
   },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    marginHorizontal: -6,
   },
   statCard: {
-    width: (Dimensions.get('window').width - 52) / 2,
+    width: CARD_WIDTH,
     backgroundColor: Colors.card,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    margin: 6,
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   statIconContainer: {
     width: 48,
@@ -261,25 +322,30 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.text,
     marginBottom: 4,
+  },
+  statUnit: {
+    fontSize: 14,
+    fontWeight: '400' as const,
+    color: Colors.textSecondary,
   },
   statLabel: {
     fontSize: 14,
     color: Colors.textSecondary,
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  progressBarContainer: {
-    height: 4,
-    backgroundColor: Colors.borderLight,
-    borderRadius: 2,
+  progressBar: {
+    height: 6,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 3,
     overflow: 'hidden',
     marginBottom: 8,
   },
-  progressBar: {
+  progressFill: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 3,
   },
   statGoal: {
     fontSize: 12,
@@ -288,24 +354,99 @@ const styles = StyleSheet.create({
   featuresGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    marginHorizontal: -6,
   },
   featureCard: {
-    width: (Dimensions.get('window').width - 52) / 2,
+    width: CARD_WIDTH,
     alignItems: 'center',
+    margin: 6,
   },
   featureGradient: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   featureLabel: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '600' as const,
     color: Colors.text,
     textAlign: 'center',
+  },
+  rewardsCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  rewardsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+  },
+  rewardItem: {
+    alignItems: 'center',
+  },
+  rewardValue: {
+    fontSize: 28,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+    marginBottom: 4,
+  },
+  rewardLabel: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  rewardDivider: {
+    width: 1,
+    backgroundColor: Colors.border,
+  },
+  rewardsButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  rewardsButtonText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.textWhite,
+  },
+  tipCard: {
+    flexDirection: 'row',
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  tipContent: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  tipTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  tipDescription: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
   },
 });
