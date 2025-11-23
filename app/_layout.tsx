@@ -3,7 +3,11 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+
 import { UserProvider } from "@/contexts/UserContext";
+import { AdminProvider } from "@/contexts/AdminContext";
+import { SettingsProvider } from "@/contexts/SettingsContext";
+import { MealTrackingProvider } from "@/contexts/MealTrackingContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -16,7 +20,6 @@ function RootLayoutNav() {
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="signup" options={{ headerShown: false }} />
-      <Stack.Screen name="health-setup" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
@@ -28,6 +31,7 @@ export default function RootLayout() {
       try {
         await SplashScreen.hideAsync();
       } catch (e) {
+        // Handle error
         console.warn(e);
       }
     })();
@@ -36,9 +40,15 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <UserProvider>
-          <RootLayoutNav />
-        </UserProvider>
+        <SettingsProvider>
+          <AdminProvider>
+            <UserProvider>
+              <MealTrackingProvider>
+                <RootLayoutNav />
+              </MealTrackingProvider>
+            </UserProvider>
+          </AdminProvider>
+        </SettingsProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
