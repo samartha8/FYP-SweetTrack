@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ColorValue } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ColorValue, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Heart, Mail, Lock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,7 +11,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const { login } = useUser();
+  const { login, hasHealthSetup } = useUser();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -23,8 +23,13 @@ export default function LoginScreen() {
     setIsLoading(false);
 
     if (success) {
-      // Returning user - go directly to home (they already did health setup during signup)
-      router.replace('/(tabs)/home' as any);
+      // Only show health setup if user hasn't completed it yet
+      // Users who log in should NOT see health setup again if already completed
+      if (!hasHealthSetup) {
+        router.replace('/health-setup' as any);
+      } else {
+        router.replace('/(tabs)/home' as any);
+      }
     }
   };
 
@@ -44,10 +49,7 @@ export default function LoginScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            {(() => {
-              const Icon = Heart as React.ComponentType<any>;
-              return <Icon size={60} color={Colors.textWhite} strokeWidth={2} />;
-            })()}
+            <Heart size={60} color={Colors.textWhite} strokeWidth={2} />
           </LinearGradient>
           <Text style={styles.title}>SweetTrack</Text>
           <Text style={styles.subtitle}>Your Health, Your Way</Text>
@@ -55,10 +57,7 @@ export default function LoginScreen() {
 
         <View style={styles.form}>
           <View style={styles.inputContainer}>
-            {(() => {
-              const Icon = Mail as React.ComponentType<any>;
-              return <Icon size={20} color={Colors.textSecondary} style={styles.inputIcon} />;
-            })()}
+            <Mail size={20} color={Colors.textSecondary} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Email"
@@ -67,14 +66,12 @@ export default function LoginScreen() {
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoComplete="email"
             />
           </View>
 
           <View style={styles.inputContainer}>
-            {(() => {
-              const Icon = Lock as React.ComponentType<any>;
-              return <Icon size={20} color={Colors.textSecondary} style={styles.inputIcon} />;
-            })()}
+            <Lock size={20} color={Colors.textSecondary} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Password"
@@ -83,6 +80,7 @@ export default function LoginScreen() {
               onChangeText={setPassword}
               secureTextEntry
               autoCapitalize="none"
+              autoComplete="password"
             />
           </View>
 
@@ -101,6 +99,23 @@ export default function LoginScreen() {
                 {isLoading ? 'Logging in...' : 'Login'}
               </Text>
             </LinearGradient>
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or continue with</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={styles.googleButton}
+            onPress={() => {}}
+          >
+            <Image
+              source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
+              style={styles.googleIcon}
+            />
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -137,6 +152,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
   title: {
     fontSize: 32,
@@ -174,6 +194,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     marginTop: 8,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   loginButtonGradient: {
     paddingVertical: 16,
@@ -185,14 +210,53 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.textWhite,
   },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 14,
+    marginBottom: 16,
+  },
+  googleIcon: {
+    width: 24,
+    height: 24,
+    marginRight: 12,
+  },
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.text,
+  },
   signupButton: {
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 20,
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.primary,
   },
   signupButtonText: {
-    fontSize: 14,
+    fontSize: 16,
+    fontWeight: '700' as const,
     color: Colors.primary,
-    fontWeight: '600' as const,
   },
 });
