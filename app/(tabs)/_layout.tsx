@@ -46,7 +46,7 @@ export default function TabLayout(): ReactElement {
       <Tabs.Screen
         name="chatbot"
         options={{
-          title: "Ask Chori",
+          title: "Ask",
           tabBarIcon: ({ color, size }: TabBarIconProps) => <MessageCircle size={size} color={color} />,
         }}
       />

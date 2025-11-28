@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ColorValue } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ColorValue, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Heart, User, Mail, Lock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
+import { wp, hp, fontSize, scaleSize, isTablet, getResponsivePadding, getIconSize } from '@/utils/responsive';
 
 export default function SignupScreen() {
   const [name, setName] = useState('');
@@ -14,6 +15,8 @@ export default function SignupScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { signup } = useUser();
+  const { width, height } = useWindowDimensions();
+  const tablet = isTablet();
 
   const handleSignup = async () => {
     if (!name || !email || !password || !confirmPassword) {
@@ -51,7 +54,7 @@ export default function SignupScreen() {
           >
             {(() => {
               const Icon = Heart as React.ComponentType<any>;
-              return <Icon size={60} color={Colors.textWhite} strokeWidth={2} />;
+              return <Icon size={getIconSize(60)} color={Colors.textWhite} strokeWidth={2} />;
             })()}
           </LinearGradient>
           <Text style={styles.title}>Create Account</Text>
@@ -62,7 +65,7 @@ export default function SignupScreen() {
           <View style={styles.inputContainer}>
             {(() => {
               const Icon = User as React.ComponentType<any>;
-              return <Icon size={20} color={Colors.textSecondary} style={styles.inputIcon} />;
+              return <Icon size={getIconSize(20)} color={Colors.textSecondary} style={styles.inputIcon} />;
             })()}
             <TextInput
               style={styles.input}
@@ -77,7 +80,7 @@ export default function SignupScreen() {
           <View style={styles.inputContainer}>
             {(() => {
               const Icon = Mail as React.ComponentType<any>;
-              return <Icon size={20} color={Colors.textSecondary} style={styles.inputIcon} />;
+              return <Icon size={getIconSize(20)} color={Colors.textSecondary} style={styles.inputIcon} />;
             })()}
             <TextInput
               style={styles.input}
@@ -93,7 +96,7 @@ export default function SignupScreen() {
           <View style={styles.inputContainer}>
             {(() => {
               const Icon = Lock as React.ComponentType<any>;
-              return <Icon size={20} color={Colors.textSecondary} style={styles.inputIcon} />;
+              return <Icon size={getIconSize(20)} color={Colors.textSecondary} style={styles.inputIcon} />;
             })()}
             <TextInput
               style={styles.input}
@@ -109,7 +112,7 @@ export default function SignupScreen() {
           <View style={styles.inputContainer}>
             {(() => {
               const Icon = Lock as React.ComponentType<any>;
-              return <Icon size={20} color={Colors.textSecondary} style={styles.inputIcon} />;
+              return <Icon size={getIconSize(20)} color={Colors.textSecondary} style={styles.inputIcon} />;
             })()}
             <TextInput
               style={styles.input}
@@ -159,30 +162,35 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 30,
-    paddingVertical: 40,
+    paddingHorizontal: getResponsivePadding(30),
+    paddingVertical: hp(5),
+    maxWidth: isTablet() ? 600 : '100%',
+    alignSelf: 'center',
+    width: '100%',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: hp(5),
   },
   logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: scaleSize(100),
+    height: scaleSize(100),
+    borderRadius: scaleSize(50),
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: scaleSize(20),
   },
   title: {
-    fontSize: 28,
+    fontSize: fontSize(28),
     fontWeight: '700' as const,
     color: Colors.text,
-    marginBottom: 8,
+    marginBottom: scaleSize(8),
+    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: fontSize(16),
     color: Colors.textSecondary,
+    textAlign: 'center',
   },
   form: {
     width: '100%',
@@ -191,43 +199,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    borderRadius: scaleSize(12),
+    paddingHorizontal: getResponsivePadding(16),
+    marginBottom: scaleSize(16),
     borderWidth: 1,
     borderColor: Colors.border,
+    minHeight: scaleSize(56),
   },
   inputIcon: {
-    marginRight: 12,
+    marginRight: scaleSize(12),
   },
   input: {
     flex: 1,
-    paddingVertical: 16,
-    fontSize: 16,
+    paddingVertical: scaleSize(16),
+    fontSize: fontSize(16),
     color: Colors.text,
   },
   signupButton: {
-    borderRadius: 12,
+    borderRadius: scaleSize(12),
     overflow: 'hidden',
-    marginTop: 8,
+    marginTop: scaleSize(8),
   },
   signupButtonGradient: {
-    paddingVertical: 16,
+    paddingVertical: scaleSize(16),
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: scaleSize(56),
   },
   signupButtonText: {
-    fontSize: 16,
+    fontSize: fontSize(16),
     fontWeight: '700' as const,
     color: Colors.textWhite,
   },
   loginButton: {
-    paddingVertical: 16,
+    paddingVertical: scaleSize(16),
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: scaleSize(20),
   },
   loginButtonText: {
-    fontSize: 14,
+    fontSize: fontSize(14),
     color: Colors.primary,
     fontWeight: '600' as const,
   },
