@@ -19,6 +19,7 @@ export type User = {
   alcohol?: string;
   fastingGlucose?: number;
   bloodPressure?: { systolic: number; diastolic: number };
+  medicalHistory?: string[];
 };
 
 export type HealthMetrics = {
@@ -26,6 +27,9 @@ export type HealthMetrics = {
   water: number;
   sleep: number;
   calories: number;
+  weight?: number;
+  glucose?: number;
+  bloodPressure?: { systolic: number; diastolic: number };
 };
 
 export type DailyGoals = {
@@ -71,22 +75,6 @@ export const [UserProvider, useUser] = createContextHook(() => {
 
   const loadUserData = async () => {
     try {
-      // Add timeout for web platform to prevent hanging
-      const loadPromise = Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.USER).catch(() => null),
-        AsyncStorage.getItem(STORAGE_KEYS.HAS_ONBOARDED).catch(() => null),
-        AsyncStorage.getItem(STORAGE_KEYS.HAS_HEALTH_SETUP).catch(() => null),
-        AsyncStorage.getItem(STORAGE_KEYS.HEALTH_METRICS).catch(() => null),
-        AsyncStorage.getItem(STORAGE_KEYS.DAILY_GOALS).catch(() => null),
-        AsyncStorage.getItem(STORAGE_KEYS.REWARDS_POINTS).catch(() => null),
-        AsyncStorage.getItem(STORAGE_KEYS.STREAK).catch(() => null),
-      ]);
-
-      // Set a timeout to prevent infinite waiting on web
-      const timeoutPromise = new Promise((resolve) => 
-        setTimeout(() => resolve([null, null, null, null, null, null, null]), 2000)
-      );
-
       const [
         storedUser,
         storedOnboarded,
@@ -95,83 +83,27 @@ export const [UserProvider, useUser] = createContextHook(() => {
         storedGoals,
         storedPoints,
         storedStreak,
-      ] = await Promise.race([loadPromise, timeoutPromise]) as any;
+      ] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.USER),
+        AsyncStorage.getItem(STORAGE_KEYS.HAS_ONBOARDED),
+        AsyncStorage.getItem(STORAGE_KEYS.HAS_HEALTH_SETUP),
+        AsyncStorage.getItem(STORAGE_KEYS.HEALTH_METRICS),
+        AsyncStorage.getItem(STORAGE_KEYS.DAILY_GOALS),
+        AsyncStorage.getItem(STORAGE_KEYS.REWARDS_POINTS),
+        AsyncStorage.getItem(STORAGE_KEYS.STREAK),
+      ]);
 
-      // Parse values only if they exist and are not null
-      if (storedUser) {
-        try {
-          setUser(JSON.parse(storedUser));
-        } catch (e) {
-          console.error('Error parsing user:', e);
-        }
-      }
-      
-      if (storedOnboarded) {
-        try {
-          const parsed = JSON.parse(storedOnboarded);
-          setHasOnboarded(parsed === true || parsed === 'true');
-        } catch (e) {
-          console.error('Error parsing onboarded:', e);
-          setHasOnboarded(false);
-        }
-      } else {
-        setHasOnboarded(false);
-      }
-      
-      if (storedHealthSetup) {
-        try {
-          const parsed = JSON.parse(storedHealthSetup);
-          setHasHealthSetup(parsed === true || parsed === 'true');
-        } catch (e) {
-          console.error('Error parsing health setup:', e);
-          setHasHealthSetup(false);
-        }
-      } else {
-        setHasHealthSetup(false);
-      }
-      
-      if (storedMetrics) {
-        try {
-          setHealthMetrics(JSON.parse(storedMetrics));
-        } catch (e) {
-          console.error('Error parsing metrics:', e);
-        }
-      }
-      
-      if (storedGoals) {
-        try {
-          setDailyGoals(JSON.parse(storedGoals));
-        } catch (e) {
-          console.error('Error parsing goals:', e);
-        }
-      }
-      
-      if (storedPoints) {
-        try {
-          setRewardsPoints(JSON.parse(storedPoints));
-        } catch (e) {
-          console.error('Error parsing points:', e);
-        }
-      }
-      
-      if (storedStreak) {
-        try {
-          setStreak(JSON.parse(storedStreak));
-        } catch (e) {
-          console.error('Error parsing streak:', e);
-        }
-      }
+      if (storedUser) setUser(JSON.parse(storedUser));
+      if (storedOnboarded) setHasOnboarded(JSON.parse(storedOnboarded));
+      if (storedHealthSetup) setHasHealthSetup(JSON.parse(storedHealthSetup));
+      if (storedMetrics) setHealthMetrics(JSON.parse(storedMetrics));
+      if (storedGoals) setDailyGoals(JSON.parse(storedGoals));
+      if (storedPoints) setRewardsPoints(JSON.parse(storedPoints));
+      if (storedStreak) setStreak(JSON.parse(storedStreak));
     } catch (error) {
       console.error('Error loading user data:', error);
-      // Reset to default state on error
-      setHasOnboarded(false);
-      setHasHealthSetup(false);
-      setUser(null);
-      // Ensure loading is set to false even on error
     } finally {
-      // Always set loading to false, even if there was an error
       setIsLoading(false);
-      console.log('User data loading complete');
     }
   };
 
@@ -194,14 +126,28 @@ export const [UserProvider, useUser] = createContextHook(() => {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
+    // In a real app, this would authenticate and load user from backend
+    // For now, check if user exists in storage, otherwise create dummy user
     try {
       const storedUser = await AsyncStorage.getItem(STORAGE_KEYS.USER);
       if (storedUser) {
         const user = JSON.parse(storedUser);
         setUser(user);
+        // Check if user has health data - if they do, they've likely completed setup
+        // But we rely on hasHealthSetup flag which is loaded separately
+        return true;
+      } else {
+        // Create new user for first-time login (shouldn't happen in real app)
+        const dummyUser: User = {
+          id: '1',
+          name: 'John Doe',
+          email,
+          medicalHistory: [],
+        };
+        await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(dummyUser));
+        setUser(dummyUser);
         return true;
       }
-      return false;
     } catch (error) {
       console.error('Error logging in:', error);
       return false;
@@ -209,15 +155,16 @@ export const [UserProvider, useUser] = createContextHook(() => {
   }, []);
 
   const signup = useCallback(async (name: string, email: string, password: string) => {
-    const newUser: User = {
+    const dummyUser: User = {
       id: Date.now().toString(),
       name,
       email,
+      medicalHistory: [],
     };
     
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(newUser));
-      setUser(newUser);
+      await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(dummyUser));
+      setUser(dummyUser);
       return true;
     } catch (error) {
       console.error('Error signing up:', error);
@@ -225,7 +172,28 @@ export const [UserProvider, useUser] = createContextHook(() => {
     }
   }, []);
 
+  const logout = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEYS.USER);
+      setUser(null);
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
+  }, []);
+
+  const resetOnboarding = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEYS.HAS_ONBOARDED);
+      await AsyncStorage.removeItem(STORAGE_KEYS.HAS_HEALTH_SETUP);
+      setHasOnboarded(false);
+      setHasHealthSetup(false);
+    } catch (error) {
+      console.error('Error resetting onboarding:', error);
+    }
+  }, []);
+
   const updateUser = useCallback(async (updates: Partial<User>) => {
+    // Allow updating even if user is null (for initial setup)
     const currentUser = user || { id: '', name: '', email: '' };
     const updatedUser = { ...currentUser, ...updates };
     try {
@@ -236,59 +204,63 @@ export const [UserProvider, useUser] = createContextHook(() => {
     }
   }, [user]);
 
-  const updateHealthMetrics = useCallback(async (metrics: Partial<HealthMetrics>) => {
-    const updated = { ...healthMetrics, ...metrics };
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.HEALTH_METRICS, JSON.stringify(updated));
-      setHealthMetrics(updated);
-    } catch (error) {
-      console.error('Error updating health metrics:', error);
+  const addRewardPoints = useCallback(async (points: number) => {
+    setRewardsPoints(prev => {
+      const newPoints = prev + points;
+      AsyncStorage.setItem(STORAGE_KEYS.REWARDS_POINTS, JSON.stringify(newPoints));
+      return newPoints;
+    });
+  }, []);
+
+  const incrementStreak = useCallback(async () => {
+    setStreak(prev => {
+      const newStreak = prev + 1;
+      AsyncStorage.setItem(STORAGE_KEYS.STREAK, JSON.stringify(newStreak));
+      return newStreak;
+    });
+  }, []);
+
+  const checkGoalsCompletion = useCallback((metrics: HealthMetrics, goals: DailyGoals) => {
+    const goalsCompleted = 
+      metrics.steps >= goals.steps &&
+      metrics.water >= goals.water &&
+      metrics.sleep >= goals.sleep;
+
+    if (goalsCompleted) {
+      addRewardPoints(50);
+      incrementStreak();
     }
-  }, [healthMetrics]);
+  }, [addRewardPoints, incrementStreak]);
 
-  const updateDailyGoals = useCallback(async (goals: Partial<DailyGoals>) => {
-    const updated = { ...dailyGoals, ...goals };
+  const updateHealthMetrics = useCallback(async (updates: Partial<HealthMetrics>) => {
+    setHealthMetrics(prev => {
+      const updatedMetrics = { ...prev, ...updates };
+      AsyncStorage.setItem(STORAGE_KEYS.HEALTH_METRICS, JSON.stringify(updatedMetrics));
+      checkGoalsCompletion(updatedMetrics, dailyGoals);
+      return updatedMetrics;
+    });
+  }, [dailyGoals, checkGoalsCompletion]);
+
+  const updateDailyGoals = useCallback(async (updates: Partial<DailyGoals>) => {
+    setDailyGoals(prev => {
+      const updatedGoals = { ...prev, ...updates };
+      AsyncStorage.setItem(STORAGE_KEYS.DAILY_GOALS, JSON.stringify(updatedGoals));
+      return updatedGoals;
+    });
+  }, []);
+
+  const resetDailyMetrics = useCallback(async () => {
+    const resetMetrics: HealthMetrics = {
+      steps: 0,
+      water: 0,
+      sleep: 0,
+      calories: 0,
+    };
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.DAILY_GOALS, JSON.stringify(updated));
-      setDailyGoals(updated);
+      await AsyncStorage.setItem(STORAGE_KEYS.HEALTH_METRICS, JSON.stringify(resetMetrics));
+      setHealthMetrics(resetMetrics);
     } catch (error) {
-      console.error('Error updating daily goals:', error);
-    }
-  }, [dailyGoals]);
-
-  const resetApp = useCallback(async () => {
-    try {
-      // Clear all AsyncStorage data
-      await Promise.all([
-        AsyncStorage.removeItem(STORAGE_KEYS.USER),
-        AsyncStorage.removeItem(STORAGE_KEYS.HAS_ONBOARDED),
-        AsyncStorage.removeItem(STORAGE_KEYS.HAS_HEALTH_SETUP),
-        AsyncStorage.removeItem(STORAGE_KEYS.HEALTH_METRICS),
-        AsyncStorage.removeItem(STORAGE_KEYS.DAILY_GOALS),
-        AsyncStorage.removeItem(STORAGE_KEYS.REWARDS_POINTS),
-        AsyncStorage.removeItem(STORAGE_KEYS.STREAK),
-      ]);
-
-      // Reset all state to defaults
-      setUser(null);
-      setHasOnboarded(false);
-      setHasHealthSetup(false);
-      setHealthMetrics({
-        steps: 0,
-        water: 0,
-        sleep: 0,
-        calories: 0,
-      });
-      setDailyGoals({
-        steps: 10000,
-        water: 8,
-        sleep: 8,
-        calories: 2000,
-      });
-      setRewardsPoints(0);
-      setStreak(0);
-    } catch (error) {
-      console.error('Error resetting app:', error);
+      console.error('Error resetting daily metrics:', error);
     }
   }, []);
 
@@ -305,11 +277,32 @@ export const [UserProvider, useUser] = createContextHook(() => {
     completeHealthSetup,
     login,
     signup,
+    logout,
+    resetOnboarding,
     updateUser,
     updateHealthMetrics,
     updateDailyGoals,
-    resetApp,
-  }), [user, hasOnboarded, hasHealthSetup, isLoading, healthMetrics, dailyGoals, rewardsPoints, 
-    streak, completeOnboarding, completeHealthSetup, login, signup, updateUser, 
-    updateHealthMetrics, updateDailyGoals, resetApp]);
+    addRewardPoints,
+    resetDailyMetrics,
+  }), [
+    user,
+    hasOnboarded,
+    hasHealthSetup,
+    isLoading,
+    healthMetrics,
+    dailyGoals,
+    rewardsPoints,
+    streak,
+    completeOnboarding,
+    completeHealthSetup,
+    login,
+    signup,
+    logout,
+    resetOnboarding,
+    updateUser,
+    updateHealthMetrics,
+    updateDailyGoals,
+    addRewardPoints,
+    resetDailyMetrics,
+  ]);
 });
