@@ -1,3 +1,7 @@
+// Mock implementation for @rork/toolkit-sdk
+// This package doesn't exist on npm, so we provide a mock implementation
+// In a real app, you would replace this with an actual AI service like OpenAI, Anthropic, etc.
+
 import { z } from 'zod';
 
 export async function generateObject<T extends z.ZodTypeAny>(params: {
@@ -11,8 +15,12 @@ export async function generateObject<T extends z.ZodTypeAny>(params: {
   }>;
   schema: T;
 }): Promise<z.infer<T>> {
+  // Mock implementation - returns placeholder data
+  // In production, replace this with actual AI service call
   console.warn('Using mock implementation for @rork/toolkit-sdk. Replace with actual AI service.');
   
+  // Return mock data based on the schema
+  // This is a simplified mock - in production you'd call an actual AI API
   const mockData = {
     foodItems: [
       { name: 'Sample Food Item', confidence: 0.85 },
