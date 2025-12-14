@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Heart, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCrossed, Camera, BarChart3, List } from 'lucide-react-native';
+import { Heart, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCrossed, Camera, BarChart3, List, Link } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
@@ -12,7 +12,7 @@ const CARD_WIDTH = (width - 60) / 2;
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, healthMetrics, dailyGoals, rewardsPoints, streak } = useUser();
+  const { user, healthMetrics, dailyGoals, rewardsPoints, streak, isGoogleFitConnected, connectGoogleFit } = useUser();
 
   const riskScore = 35;
   const riskLevel = 'Low' as const;
@@ -44,10 +44,6 @@ export default function HomeScreen() {
             <Text style={styles.greeting}>Hello, {user?.name || 'User'}!</Text>
             <Text style={styles.subtitle}>Let&apos;s check your health today</Text>
           </View>
-          <View style={styles.streakContainer}>
-            <Text style={styles.streakNumber}>{streak}</Text>
-            <Text style={styles.streakLabel}>Day Streak</Text>
-          </View>
         </View>
 
         <TouchableOpacity
@@ -75,38 +71,69 @@ export default function HomeScreen() {
           </LinearGradient>
         </TouchableOpacity>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Today&apos;s Progress</Text>
-            <TouchableOpacity onPress={() => router.push('/progress' as any)}>
-              <Text style={styles.sectionLink}>View All</Text>
+        {isGoogleFitConnected && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Today&apos;s Progress</Text>
+              <TouchableOpacity onPress={() => router.push('/progress' as any)}>
+                <Text style={styles.sectionLink}>View All</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.statsGrid}>
+              {quickStats.map((stat, index) => {
+                const progress = Math.min((stat.value / stat.goal) * 100, 100);
+                const Icon = stat.icon;
+
+                return (
+                  <View key={index} style={styles.statCard}>
+                    <View style={[styles.statIconContainer, { backgroundColor: stat.color + '20' }]}>
+                      <Icon size={24} color={stat.color} strokeWidth={2} />
+                    </View>
+                    <Text style={styles.statValue}>
+                      {stat.value}
+                      {stat.unit && <Text style={styles.statUnit}> {stat.unit}</Text>}
+                    </Text>
+                    <Text style={styles.statLabel}>{stat.label}</Text>
+                    <View style={styles.progressBar}>
+                      <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: stat.color }]} />
+                    </View>
+                    <Text style={styles.statGoal}>Goal: {stat.goal}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {!isGoogleFitConnected && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.googleFitCard}
+              activeOpacity={0.8}
+              onPress={connectGoogleFit}
+            >
+              <LinearGradient
+                colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                style={styles.googleFitGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.googleFitContent}>
+                  <View style={styles.googleFitIconContainer}>
+                    <Link size={32} color={Colors.textWhite} strokeWidth={2} />
+                  </View>
+                  <View style={styles.googleFitTextContainer}>
+                    <Text style={styles.googleFitTitle}>Connect to Google Fit</Text>
+                    <Text style={styles.googleFitDescription}>
+                      Connect to Google Fit to view your health data.
+                    </Text>
+                  </View>
+                </View>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
-
-          <View style={styles.statsGrid}>
-            {quickStats.map((stat, index) => {
-              const progress = Math.min((stat.value / stat.goal) * 100, 100);
-              const Icon = stat.icon;
-
-              return (
-                <View key={index} style={styles.statCard}>
-                  <View style={[styles.statIconContainer, { backgroundColor: stat.color + '20' }]}>
-                    <Icon size={24} color={stat.color} strokeWidth={2} />
-                  </View>
-                  <Text style={styles.statValue}>
-                    {stat.value}
-                    {stat.unit && <Text style={styles.statUnit}> {stat.unit}</Text>}
-                  </Text>
-                  <Text style={styles.statLabel}>{stat.label}</Text>
-                  <View style={styles.progressBar}>
-                    <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: stat.color }]} />
-                  </View>
-                  <Text style={styles.statGoal}>Goal: {stat.goal}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
+        )}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -209,22 +236,46 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 4,
   },
-  streakContainer: {
-    alignItems: 'center',
-    backgroundColor: Colors.primary + '20',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
+  googleFitCard: {
+    marginHorizontal: 0,
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  streakNumber: {
+  googleFitGradient: {
+    padding: 24,
+  },
+  googleFitContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  googleFitIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  googleFitTextContainer: {
+    flex: 1,
+  },
+  googleFitTitle: {
     fontSize: 20,
     fontWeight: '700' as const,
-    color: Colors.primary,
+    color: Colors.textWhite,
+    marginBottom: 8,
   },
-  streakLabel: {
-    fontSize: 12,
-    color: Colors.primary,
-    marginTop: 2,
+  googleFitDescription: {
+    fontSize: 14,
+    color: Colors.textWhite,
+    opacity: 0.9,
+    lineHeight: 20,
   },
   riskCard: {
     marginHorizontal: 20,
