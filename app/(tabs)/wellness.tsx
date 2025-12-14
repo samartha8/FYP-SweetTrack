@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Activity, Droplet, Moon, Flame, X, TrendingUp } from 'lucide-react-native';
+import { Activity, Droplet, Moon, Flame, X, TrendingUp, Link } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
@@ -10,7 +10,7 @@ type MetricType = 'steps' | 'water' | 'sleep' | 'calories';
 
 export default function WellnessScreen() {
   const insets = useSafeAreaInsets();
-  const { healthMetrics, dailyGoals, updateHealthMetrics } = useUser();
+  const { healthMetrics, dailyGoals, updateHealthMetrics, isGoogleFitConnected, connectGoogleFit } = useUser();
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState<MetricType | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -94,7 +94,34 @@ export default function WellnessScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {metrics.map((metric, index) => {
+        {!isGoogleFitConnected ? (
+          <TouchableOpacity
+            style={styles.googleFitCard}
+            activeOpacity={0.8}
+            onPress={connectGoogleFit}
+          >
+            <LinearGradient
+              colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+              style={styles.googleFitGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.googleFitContent}>
+                <View style={styles.googleFitIconContainer}>
+                  <Link size={40} color={Colors.textWhite} strokeWidth={2} />
+                </View>
+                <View style={styles.googleFitTextContainer}>
+                  <Text style={styles.googleFitTitle}>Connect to Google Fit</Text>
+                  <Text style={styles.googleFitDescription}>
+                    Connect to Google Fit to view your health data.
+                  </Text>
+                </View>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : (
+          <>
+            {metrics.map((metric, index) => {
           const progress = Math.min((metric.value / metric.goal) * 100, 100);
           const Icon = metric.icon;
 
@@ -201,16 +228,20 @@ export default function WellnessScreen() {
             </View>
           );
         })}
+          </>
+        )}
 
-        <View style={styles.tipsCard}>
-          <TrendingUp size={24} color={Colors.primary} strokeWidth={2} />
-          <View style={styles.tipsContent}>
-            <Text style={styles.tipsTitle}>Weekly Summary</Text>
-            <Text style={styles.tipsDescription}>
-              You&apos;re doing great! Keep tracking your daily activities to maintain a healthy lifestyle.
-            </Text>
+        {isGoogleFitConnected && (
+          <View style={styles.tipsCard}>
+            <TrendingUp size={24} color={Colors.primary} strokeWidth={2} />
+            <View style={styles.tipsContent}>
+              <Text style={styles.tipsTitle}>Weekly Summary</Text>
+              <Text style={styles.tipsDescription}>
+                You&apos;re doing great! Keep tracking your daily activities to maintain a healthy lifestyle.
+              </Text>
+            </View>
           </View>
-        </View>
+        )}
       </ScrollView>
 
       <Modal
@@ -409,6 +440,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     lineHeight: 20,
+  },
+  googleFitCard: {
+    marginBottom: 20,
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  googleFitGradient: {
+    padding: 24,
+  },
+  googleFitContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  googleFitIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 20,
+  },
+  googleFitTextContainer: {
+    flex: 1,
+  },
+  googleFitTitle: {
+    fontSize: 24,
+    fontWeight: '700' as const,
+    color: Colors.textWhite,
+    marginBottom: 8,
+  },
+  googleFitDescription: {
+    fontSize: 16,
+    color: Colors.textWhite,
+    opacity: 0.9,
+    lineHeight: 22,
   },
   modalOverlay: {
     flex: 1,
