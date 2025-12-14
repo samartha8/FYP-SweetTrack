@@ -1,50 +1,35 @@
-import { useEffect, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useUser } from '@/contexts/UserContext';
 import Colors from '@/constants/colors';
+import { useUser } from '@/contexts/UserContext';
+import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 export default function IndexScreen() {
   const router = useRouter();
   const { isLoading, hasOnboarded, hasHealthSetup, user } = useUser();
-  const hasNavigated = useRef(false);
 
   useEffect(() => {
-    // Add debug logging
-    console.log('Index Screen - State:', {
-      isLoading,
-      hasOnboarded,
-      hasHealthSetup,
-      hasUser: !!user,
-      hasNavigated: hasNavigated.current,
-    });
-
-    // Prevent multiple navigations
-    if (hasNavigated.current || isLoading) {
-      return;
-    }
-
-    // Wait for loading to complete before routing
     if (!isLoading) {
-      hasNavigated.current = true;
+      // Priority 1: If user is logged in, they've already seen onboarding (via login screen)
+      // Skip onboarding check if user exists
+      if (user) {
+        if (!hasHealthSetup) {
+          // Logged in but no health setup - go to health setup
+          router.replace('/health-setup' as any);
+        } else {
+          // Everything complete - go to dashboard
+          router.replace('/(tabs)/home' as any);
+        }
+        return;
+      }
       
-      // Follow the exact flow order
+      // Priority 2: Check onboarding only if no user is logged in
       if (!hasOnboarded) {
-        // First time user - show onboarding
-        console.log('Navigating to onboarding');
-        router.replace('/onboarding');
-      } else if (!user) {
-        // Onboarded but not logged in - show login
-        console.log('Navigating to login');
-        router.replace('/login');
-      } else if (!hasHealthSetup) {
-        // Logged in but health setup not done - show health setup
-        console.log('Navigating to health-setup');
-        router.replace('/health-setup');
+        // First time - show onboarding
+        router.replace('/onboarding' as any);
       } else {
-        // Everything complete - show home
-        console.log('Navigating to home');
-        router.replace('/(tabs)/home');
+        // Not logged in - go to login
+        router.replace('/login' as any);
       }
     }
   }, [isLoading, hasOnboarded, hasHealthSetup, user, router]);
