@@ -18,7 +18,7 @@ const FALLBACK_FIREBASE_CONFIG = {
   storageBucket: "sweettrack-d805d.firebasestorage.app",
   messagingSenderId: "1045594987128",
   appId: "1:1045594987128:web:aecc3e857beb3b605c2b8d",
-  // measurementId: "G-KEK6PJXDXG",
+  measurementId: "G-J8J9HRXCGJ",
 };
 
 // Firebase configuration from app.json
