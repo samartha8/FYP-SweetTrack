@@ -47,50 +47,53 @@ const getFirebaseConfig = () => {
 };
 
 // Initialize Firebase App
-let app: FirebaseApp | null = null;
-let auth: Auth | null = null;
-let db: Firestore | null = null;
+let _app: FirebaseApp | null = null;
+let _auth: Auth | null = null;
+let _db: Firestore | null = null;
 
 try {
   const config = getFirebaseConfig();
 
   // Initialize app only if not already initialized
   if (getApps().length === 0) {
-    app = initializeApp(config);
+    _app = initializeApp(config);
   } else {
-    app = getApps()[0];
+    _app = getApps()[0];
   }
 
   // Initialize Auth with AsyncStorage persistence for React Native when available
   if (Platform.OS !== 'web') {
     try {
-      if (typeof getReactNativePersistence === 'function') {
-        auth = initializeAuth(app, {
+        if (typeof getReactNativePersistence === 'function') {
+        _auth = initializeAuth(_app, {
           persistence: getReactNativePersistence(AsyncStorage),
         });
       } else {
         // Fallback: initialize without explicit RN persistence if helper missing
-        auth = initializeAuth(app);
+        _auth = initializeAuth(_app);
       }
     } catch (e: any) {
       const code = (e && (e as any).code) || (e && (e as Error).message) || '';
       // If auth is already initialized, get the existing instance
       if (String(code).includes('already-initialized') || String(code).includes('already exists')) {
-        auth = getAuth(app);
+        _auth = getAuth(_app!);
       } else {
         throw e;
       }
     }
   } else {
-    auth = getAuth(app);
+    _auth = getAuth(_app!);
   }
 
   // Initialize Firestore (optional, for future use)
-  db = getFirestore(app);
+  _db = getFirestore(_app!);
 } catch (error) {
   console.error('Firebase initialization error:', error);
   throw error;
 }
 
-export { app, auth, db };
+// Export non-null asserted instances for consumers
+export const app = _app!;
+export const auth = _auth!;
+export const db = _db!;
 export default { app, auth, db };
