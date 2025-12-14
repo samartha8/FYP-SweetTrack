@@ -32,7 +32,7 @@ export default function ChatbotScreen() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: `Hello ${user?.name || 'there'}! I'm SweetTrack, your health assistant. How can I help you today?`,
+      text: `Hello ${user?.name || 'there'}! I'm Chori, your health assistant. How can I help you today?`,
       sender: 'bot',
       timestamp: new Date(),
     },
@@ -80,7 +80,7 @@ export default function ChatbotScreen() {
           <Bot size={28} color={Colors.primary} strokeWidth={2} />
         </View>
         <View style={styles.headerText}>
-          <Text style={styles.headerTitle}>Ask SweetTrack</Text>
+          <Text style={styles.headerTitle}>Ask Chori</Text>
           <Text style={styles.headerSubtitle}>Your AI Health Assistant</Text>
         </View>
       </View>
