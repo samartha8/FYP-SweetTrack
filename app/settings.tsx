@@ -1,20 +1,26 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  X,
-  Globe,
-  Eye,
-  Bell,
-  Smartphone,
-  RefreshCw,
-} from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { useSettings, Language } from '@/contexts/SettingsContext';
+import { Language, useSettings } from '@/contexts/SettingsContext';
+import { useUser } from '@/contexts/UserContext';
+import { Stack, useRouter } from 'expo-router';
+import {
+    Bell,
+    Eye,
+    Globe,
+    RefreshCw,
+    Smartphone,
+    Target,
+    X,
+} from 'lucide-react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [goals, setGoals] = useState<{ steps: number; water: number; sleep: number; calories: number; pushEnabled: boolean } | null>(null);
+  const [isGoalsLoading, setGoalsLoading] = useState<boolean>(false);
+  const [isRegisteringPush, setRegisteringPush] = useState<boolean>(false);
   const {
     settings,
     toggleHighContrast,
@@ -24,6 +30,7 @@ export default function SettingsScreen() {
     updateAccessibility,
     resetSettings,
   } = useSettings();
+  const { registerPushNotifications, ensureAccessToken } = useUser();
 
   const languages = [
     { code: 'en' as Language, name: 'English' },
@@ -37,18 +44,263 @@ export default function SettingsScreen() {
     { value: 'large' as const, label: 'Large' },
   ];
 
+  const translations = useMemo(() => ({
+    en: {
+      header: 'Settings',
+      language: 'Language',
+      display: 'Display',
+      highContrast: 'High Contrast Mode',
+      highContrastDesc: 'Increases contrast for better visibility',
+      fontSize: 'Font Size',
+      notifications: 'Notifications',
+      enableNotifications: 'Enable Notifications',
+      enableNotificationsDesc: 'Receive app notifications',
+      dailyReminders: 'Daily Reminders',
+      dailyRemindersDesc: 'Get daily health reminders',
+      goalAlerts: 'Goal Alerts',
+      goalAlertsDesc: 'Alerts when approaching goals',
+      healthTips: 'Health Tips',
+      healthTipsDesc: 'Daily wellness tips',
+      registerPush: 'Register Push Device',
+      registering: 'Registering...',
+      goals: 'Daily Goals & Alerts',
+      pushGoalAlerts: 'Push Goal Alerts',
+      pushGoalAlertsDesc: 'Allow push reminders for goals',
+      stepsGoal: 'Steps Goal',
+      waterGoal: 'Water Goal',
+      sleepGoal: 'Sleep Goal',
+      caloriesGoal: 'Calories Goal',
+      saveGoals: 'Save Goals',
+      accessibility: 'Accessibility',
+      screenReader: 'Screen Reader Support',
+      screenReaderDesc: 'Optimize for screen readers',
+      haptics: 'Haptic Feedback',
+      hapticsDesc: 'Vibrations for interactions',
+      voiceInput: 'Voice Input',
+      voiceInputDesc: 'Enable voice commands',
+      reset: 'Reset to Default',
+      resetConfirm: 'Are you sure you want to reset all settings to default?',
+      resetSuccess: 'Settings have been reset to default',
+      footer: 'These settings are designed to meet WCAG 2.1 AA accessibility standards',
+    },
+    ne: {
+      header: 'सेटिङ्स',
+      language: 'भाषा',
+      display: 'प्रदर्शन',
+      highContrast: 'उच्च कन्ट्रास्ट',
+      highContrastDesc: 'देख्न सजिलोका लागि कन्ट्रास्ट बढाउँछ',
+      fontSize: 'फन्ट साइज',
+      notifications: 'सूचनाहरू',
+      enableNotifications: 'सूचना सक्षम गर्नुहोस्',
+      enableNotificationsDesc: 'एप सूचना प्राप्त गर्नुहोस्',
+      dailyReminders: 'दैनिक सम्झना',
+      dailyRemindersDesc: 'दैनिक स्वास्थ्य सम्झना',
+      goalAlerts: 'लक्ष्य अलर्ट',
+      goalAlertsDesc: 'लक्ष्य नजिक हुँदा सूचना',
+      healthTips: 'स्वास्थ्य सुझाव',
+      healthTipsDesc: 'दैनिक स्वास्थ्य सुझाव',
+      registerPush: 'पुष डिभाइस दर्ता',
+      registering: 'दर्ता भइरहेको...',
+      goals: 'दैनिक लक्ष्य र अलर्ट',
+      pushGoalAlerts: 'पुष लक्ष्य अलर्ट',
+      pushGoalAlertsDesc: 'लक्ष्यका लागि पुष सम्झना',
+      stepsGoal: 'हिँडाइ लक्ष्य',
+      waterGoal: 'पानी लक्ष्य',
+      sleepGoal: 'निन्द्रा लक्ष्य',
+      caloriesGoal: 'क्यालोरी लक्ष्य',
+      saveGoals: 'लक्ष्य बचत गर्नुहोस्',
+      accessibility: 'सुगमता',
+      screenReader: 'स्क्रिन रिडर समर्थन',
+      screenReaderDesc: 'स्क्रिन रिडरका लागि अनुकूल',
+      haptics: 'ह्याप्टिक प्रतिक्रिया',
+      hapticsDesc: 'इन्टर्याक्शनका लागि कम्पन',
+      voiceInput: 'भ्वाइस इनपुट',
+      voiceInputDesc: 'भ्वाइस कमान्ड सक्षम',
+      reset: 'डिफल्टमा फर्काउनुहोस्',
+      resetConfirm: 'सबै सेटिङ्स डिफल्टमा फर्काउनुहोस्?',
+      resetSuccess: 'सेटिङ्स डिफल्टमा पुन: सेट गरियो',
+      footer: 'यी सेटिङहरू WCAG 2.1 AA मापदण्ड पूरा गर्न डिजाइन गरिएका छन्',
+    },
+    hi: {
+      header: 'सेटिंग्स',
+      language: 'भाषा',
+      display: 'डिस्प्ले',
+      highContrast: 'हाई कॉन्ट्रास्ट मोड',
+      highContrastDesc: 'बेहतर दृश्यता के लिए कॉन्ट्रास्ट बढ़ाता है',
+      fontSize: 'फ़ॉन्ट आकार',
+      notifications: 'सूचनाएं',
+      enableNotifications: 'सूचनाएं चालू करें',
+      enableNotificationsDesc: 'ऐप सूचनाएं प्राप्त करें',
+      dailyReminders: 'दैनिक रिमाइंडर',
+      dailyRemindersDesc: 'दैनिक स्वास्थ्य रिमाइंडर',
+      goalAlerts: 'लक्ष्य अलर्ट',
+      goalAlertsDesc: 'लक्ष्य के पास पहुँचते समय अलर्ट',
+      healthTips: 'स्वास्थ्य सुझाव',
+      healthTipsDesc: 'दैनिक स्वास्थ्य टिप्स',
+      registerPush: 'पुश डिवाइस रजिस्टर करें',
+      registering: 'रजिस्टर हो रहा है...',
+      goals: 'दैनिक लक्ष्य और अलर्ट',
+      pushGoalAlerts: 'पुश लक्ष्य अलर्ट',
+      pushGoalAlertsDesc: 'लक्ष्यों के लिए पुश रिमाइंडर',
+      stepsGoal: 'कदम लक्ष्य',
+      waterGoal: 'पानी लक्ष्य',
+      sleepGoal: 'नींद लक्ष्य',
+      caloriesGoal: 'कैलोरी लक्ष्य',
+      saveGoals: 'लक्ष्य सहेजें',
+      accessibility: 'एक्सेसिबिलिटी',
+      screenReader: 'स्क्रीन रीडर समर्थन',
+      screenReaderDesc: 'स्क्रीन रीडर के लिए अनुकूल',
+      haptics: 'हैप्टिक फीडबैक',
+      hapticsDesc: 'इंटरैक्शन के लिए वाइब्रेशन',
+      voiceInput: 'वॉयस इनपुट',
+      voiceInputDesc: 'वॉयस कमांड सक्षम करें',
+      reset: 'डिफ़ॉल्ट पर रीसेट',
+      resetConfirm: 'सभी सेटिंग्स को डिफ़ॉल्ट पर रीसेट करें?',
+      resetSuccess: 'सेटिंग्स डिफ़ॉल्ट पर रीसेट हुईं',
+      footer: 'ये सेटिंग्स WCAG 2.1 AA मानकों को पूरा करने के लिए डिज़ाइन की गई हैं',
+    },
+  }), []);
+
+  const t = translations[settings.language] || translations.en;
+
+  const palette = settings.highContrast ? {
+    primary: '#FFD60A',
+    text: '#FFFFFF',
+    textSecondary: '#E5E7EB',
+    textLight: '#D1D5DB',
+    background: '#000000',
+    backgroundSecondary: '#0F172A',
+    border: '#374151',
+    card: '#111827',
+    cardShadow: 'rgba(255, 255, 255, 0.18)',
+  } : {
+    primary: Colors.primary,
+    text: Colors.text,
+    textSecondary: Colors.textSecondary,
+    textLight: Colors.textLight,
+    background: Colors.background,
+    backgroundSecondary: Colors.backgroundSecondary,
+    border: Colors.border,
+    card: Colors.card,
+    cardShadow: Colors.cardShadow,
+  };
+
+  const fontScale = { small: 0.9, medium: 1, large: 1.15 }[settings.fontSize] || 1;
+  const scale = useMemo(() => (size: number) => Math.round(size * fontScale), [fontScale]);
+
+  const themed = useMemo(() => ({
+    container: { backgroundColor: palette.backgroundSecondary },
+    header: { backgroundColor: palette.background, borderBottomColor: palette.border },
+    headerTitle: { color: palette.text, fontSize: scale(18) },
+    sectionTitle: { color: palette.text, fontSize: scale(18) },
+    card: { backgroundColor: palette.card, shadowColor: palette.cardShadow, borderColor: palette.border },
+    cardTitle: { color: palette.text, fontSize: scale(14) },
+    optionLabel: { color: palette.text, fontSize: scale(15) },
+    optionDescription: { color: palette.textSecondary, fontSize: scale(13) },
+    segmentButtonText: { fontSize: scale(14) },
+    segmentButtonTextActive: { fontSize: scale(14) },
+    resetButtonText: { fontSize: scale(16) },
+    footerText: { color: palette.textLight, fontSize: scale(12) },
+    numberInput: { borderColor: palette.border, backgroundColor: palette.backgroundSecondary, color: palette.text },
+    saveButton: { backgroundColor: palette.primary },
+    saveButtonText: { fontSize: scale(16) },
+  }), [palette, fontScale, scale]);
+
+  const API_BASE_URL = (() => {
+    const normalize = (url: string) => {
+      const trimmed = url.replace(/\/$/, '');
+      return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+    };
+
+    const envBase = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL;
+    if (envBase) return normalize(envBase);
+
+    // Default to backend dev port for web
+    if (typeof window !== 'undefined') return 'http://localhost:5000/api';
+
+    const hostOverride = process.env.EXPO_PUBLIC_API_HOST || process.env.API_HOST;
+    const port = process.env.EXPO_PUBLIC_API_PORT || process.env.API_PORT || '5000';
+    const defaultIP = '10.0.2.2';
+    const hostIP = hostOverride || (__DEV__ ? defaultIP : '192.168.0.111');
+    return `http://${hostIP}:${port}/api`;
+  })();
+
+  const loadGoals = async () => {
+    try {
+      setGoalsLoading(true);
+      const token = await ensureAccessToken();
+      if (!token) return;
+      const res = await fetch(`${API_BASE_URL}/notifications/goals`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setGoals({
+          steps: data.goals?.steps ?? 10000,
+          water: data.goals?.water ?? 8,
+          sleep: data.goals?.sleep ?? 8,
+          calories: data.goals?.calories ?? 2000,
+          pushEnabled: data.goals?.pushEnabled ?? true,
+        });
+      }
+    } catch (error) {
+      console.error('Load goals error:', error);
+    } finally {
+      setGoalsLoading(false);
+    }
+  };
+
+  const saveGoals = async () => {
+    try {
+      const token = await ensureAccessToken();
+      if (!token || !goals) return;
+      const res = await fetch(`${API_BASE_URL}/notifications/goals`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(goals),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        Alert.alert('Error', data.message || 'Could not save goals');
+        return;
+      }
+      Alert.alert('Saved', 'Goals updated successfully');
+    } catch (error) {
+      console.error('Save goals error:', error);
+      Alert.alert('Error', 'Could not save goals');
+    }
+  };
+
+  const handleRegisterPush = async () => {
+    setRegisteringPush(true);
+    const result = await registerPushNotifications();
+    setRegisteringPush(false);
+    if (result.success) {
+      Alert.alert('Enabled', 'Push notifications registered');
+    } else {
+      Alert.alert('Push not enabled', result.message || 'Try again later');
+    }
+  };
+
+  useEffect(() => {
+    loadGoals();
+  }, [loadGoals]);
+
   const handleResetSettings = () => {
     Alert.alert(
-      'Reset Settings',
-      'Are you sure you want to reset all settings to default?',
+      t.reset,
+      t.resetConfirm,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Reset',
+          text: t.reset,
           style: 'destructive',
           onPress: () => {
             resetSettings();
-            Alert.alert('Success', 'Settings have been reset to default');
+            Alert.alert(t.reset, t.resetSuccess);
           },
         },
       ]
@@ -56,14 +308,14 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <X size={24} color={Colors.text} strokeWidth={2} />
+          <X size={24} color={palette.text} strokeWidth={2} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text style={[styles.headerTitle, themed.headerTitle]}>{t.header}</Text>
         <View style={styles.headerButton} />
       </View>
 
@@ -74,10 +326,10 @@ export default function SettingsScreen() {
       >
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Globe size={20} color={Colors.primary} strokeWidth={2} />
-            <Text style={styles.sectionTitle}>Language</Text>
+            <Globe size={20} color={palette.primary} strokeWidth={2} />
+            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.language}</Text>
           </View>
-          <View style={styles.card}>
+          <View style={[styles.card, themed.card]}>
             {languages.map((lang, index) => (
               <TouchableOpacity
                 key={lang.code}
@@ -90,14 +342,15 @@ export default function SettingsScreen() {
                 accessibilityLabel={`Select ${lang.name} language`}
                 accessibilityState={{ selected: settings.language === lang.code }}
               >
-                <Text style={styles.optionLabel}>{lang.name}</Text>
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{lang.name}</Text>
                 <View
                   style={[
                     styles.radioOuter,
-                    settings.language === lang.code && styles.radioOuterActive,
+                    { borderColor: palette.border },
+                    settings.language === lang.code && { borderColor: palette.primary },
                   ]}
                 >
-                  {settings.language === lang.code && <View style={styles.radioInner} />}
+                  {settings.language === lang.code && <View style={[styles.radioInner, { backgroundColor: palette.primary }]} />}
                 </View>
               </TouchableOpacity>
             ))}
@@ -106,23 +359,23 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Eye size={20} color={Colors.primary} strokeWidth={2} />
-            <Text style={styles.sectionTitle}>Display</Text>
+            <Eye size={20} color={palette.primary} strokeWidth={2} />
+            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.display}</Text>
           </View>
 
-          <View style={styles.card}>
+          <View style={[styles.card, themed.card]}>
             <View style={styles.optionRow}>
               <View style={styles.optionContent}>
-                <Text style={styles.optionLabel}>High Contrast Mode</Text>
-                <Text style={styles.optionDescription}>
-                  Increases contrast for better visibility
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.highContrast}</Text>
+                <Text style={[styles.optionDescription, themed.optionDescription]}>
+                  {t.highContrastDesc}
                 </Text>
               </View>
               <Switch
                 value={settings.highContrast}
                 onValueChange={toggleHighContrast}
-                trackColor={{ false: Colors.border, true: Colors.primary }}
-                thumbColor={Colors.textWhite}
+                trackColor={{ false: palette.border, true: palette.primary }}
+                thumbColor={Colors.text}
                 accessibilityLabel="Toggle high contrast mode"
                 accessibilityRole="switch"
                 accessibilityState={{ checked: settings.highContrast }}
@@ -130,8 +383,8 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Font Size</Text>
+          <View style={[styles.card, themed.card]}>
+            <Text style={[styles.cardTitle, themed.cardTitle]}>{t.fontSize}</Text>
             <View style={styles.segmentedControl}>
               {fontSizes.map((size) => (
                 <TouchableOpacity
@@ -148,10 +401,12 @@ export default function SettingsScreen() {
                   <Text
                     style={[
                       styles.segmentButtonText,
+                      themed.segmentButtonText,
                       settings.fontSize === size.value && styles.segmentButtonTextActive,
+                      settings.fontSize === size.value && themed.segmentButtonTextActive,
                     ]}
                   >
-                    {size.label}
+                    size.label
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -161,23 +416,23 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Bell size={20} color={Colors.primary} strokeWidth={2} />
-            <Text style={styles.sectionTitle}>Notifications</Text>
+            <Bell size={20} color={palette.primary} strokeWidth={2} />
+            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.notifications}</Text>
           </View>
 
-          <View style={styles.card}>
+          <View style={[styles.card, themed.card]}>
             <View style={[styles.optionRow, styles.optionRowBorder]}>
               <View style={styles.optionContent}>
-                <Text style={styles.optionLabel}>Enable Notifications</Text>
-                <Text style={styles.optionDescription}>
-                  Receive app notifications
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.enableNotifications}</Text>
+                <Text style={[styles.optionDescription, themed.optionDescription]}>
+                  {t.enableNotificationsDesc}
                 </Text>
               </View>
               <Switch
                 value={settings.notifications.enabled}
                 onValueChange={(value) => updateNotifications({ enabled: value })}
-                trackColor={{ false: Colors.border, true: Colors.primary }}
-                thumbColor={Colors.textWhite}
+                trackColor={{ false: palette.border, true: palette.primary }}
+                thumbColor={palette.text}
                 accessibilityLabel="Toggle notifications"
                 accessibilityRole="switch"
                 accessibilityState={{ checked: settings.notifications.enabled }}
@@ -186,16 +441,16 @@ export default function SettingsScreen() {
 
             <View style={[styles.optionRow, styles.optionRowBorder]}>
               <View style={styles.optionContent}>
-                <Text style={styles.optionLabel}>Daily Reminders</Text>
-                <Text style={styles.optionDescription}>
-                  Get daily health reminders
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.dailyReminders}</Text>
+                <Text style={[styles.optionDescription, themed.optionDescription]}>
+                  {t.dailyRemindersDesc}
                 </Text>
               </View>
               <Switch
                 value={settings.notifications.dailyReminders}
                 onValueChange={(value) => updateNotifications({ dailyReminders: value })}
-                trackColor={{ false: Colors.border, true: Colors.primary }}
-                thumbColor={Colors.textWhite}
+                trackColor={{ false: palette.border, true: palette.primary }}
+                thumbColor={palette.text}
                 disabled={!settings.notifications.enabled}
                 accessibilityLabel="Toggle daily reminders"
                 accessibilityRole="switch"
@@ -208,16 +463,16 @@ export default function SettingsScreen() {
 
             <View style={[styles.optionRow, styles.optionRowBorder]}>
               <View style={styles.optionContent}>
-                <Text style={styles.optionLabel}>Goal Alerts</Text>
-                <Text style={styles.optionDescription}>
-                  Alerts when approaching goals
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.goalAlerts}</Text>
+                <Text style={[styles.optionDescription, themed.optionDescription]}>
+                  {t.goalAlertsDesc}
                 </Text>
               </View>
               <Switch
                 value={settings.notifications.goalAlerts}
                 onValueChange={(value) => updateNotifications({ goalAlerts: value })}
-                trackColor={{ false: Colors.border, true: Colors.primary }}
-                thumbColor={Colors.textWhite}
+                trackColor={{ false: palette.border, true: palette.primary }}
+                thumbColor={palette.text}
                 disabled={!settings.notifications.enabled}
                 accessibilityLabel="Toggle goal alerts"
                 accessibilityRole="switch"
@@ -230,16 +485,16 @@ export default function SettingsScreen() {
 
             <View style={styles.optionRow}>
               <View style={styles.optionContent}>
-                <Text style={styles.optionLabel}>Health Tips</Text>
-                <Text style={styles.optionDescription}>
-                  Daily wellness tips
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.healthTips}</Text>
+                <Text style={[styles.optionDescription, themed.optionDescription]}>
+                  {t.healthTipsDesc}
                 </Text>
               </View>
               <Switch
                 value={settings.notifications.healthTips}
                 onValueChange={(value) => updateNotifications({ healthTips: value })}
-                trackColor={{ false: Colors.border, true: Colors.primary }}
-                thumbColor={Colors.textWhite}
+                trackColor={{ false: palette.border, true: palette.primary }}
+                thumbColor={palette.text}
                 disabled={!settings.notifications.enabled}
                 accessibilityLabel="Toggle health tips"
                 accessibilityRole="switch"
@@ -249,28 +504,99 @@ export default function SettingsScreen() {
                 }}
               />
             </View>
+
+            <TouchableOpacity
+              style={[
+                styles.saveButton,
+                themed.saveButton,
+                { marginTop: 12, opacity: isRegisteringPush ? 0.7 : 1 },
+              ]}
+              onPress={handleRegisterPush}
+              disabled={isRegisteringPush}
+            >
+              <Text style={[styles.saveButtonText, themed.saveButtonText]}>
+                {isRegisteringPush ? t.registering : t.registerPush}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Smartphone size={20} color={Colors.primary} strokeWidth={2} />
-            <Text style={styles.sectionTitle}>Accessibility</Text>
+            <Target size={20} color={palette.primary} strokeWidth={2} />
+            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.goals}</Text>
+          </View>
+          <View style={[styles.card, themed.card]}>
+            {isGoalsLoading && !goals ? (
+              <ActivityIndicator color={Colors.primary} />
+            ) : (
+              <>
+                <View style={[styles.optionRow, styles.optionRowBorder]}>
+                  <View style={styles.optionContent}>
+                    <Text style={[styles.optionLabel, themed.optionLabel]}>{t.pushGoalAlerts}</Text>
+                    <Text style={[styles.optionDescription, themed.optionDescription]}>{t.pushGoalAlertsDesc}</Text>
+                  </View>
+                  <Switch
+                    value={goals?.pushEnabled ?? true}
+                    onValueChange={(value) => setGoals(prev => prev ? { ...prev, pushEnabled: value } : prev)}
+                    trackColor={{ false: palette.border, true: palette.primary }}
+                    thumbColor={palette.text}
+                    accessibilityLabel="Toggle push goal alerts"
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: goals?.pushEnabled }}
+                  />
+                </View>
+
+                {[
+                  { key: 'steps', label: t.stepsGoal, suffix: 'steps/day' },
+                  { key: 'water', label: t.waterGoal, suffix: 'glasses/day' },
+                  { key: 'sleep', label: t.sleepGoal, suffix: 'hours/night' },
+                  { key: 'calories', label: t.caloriesGoal, suffix: 'kcal/day' },
+                ].map(item => (
+                  <View key={item.key} style={[styles.optionRow, styles.optionRowBorder]}>
+                    <View style={styles.optionContent}>
+                      <Text style={[styles.optionLabel, themed.optionLabel]}>{item.label}</Text>
+                      <Text style={[styles.optionDescription, themed.optionDescription]}>{item.suffix}</Text>
+                    </View>
+                    <TextInput
+                      style={[styles.numberInput, themed.numberInput]}
+                      keyboardType="numeric"
+                      value={goals ? String((goals as any)[item.key] ?? '') : ''}
+                      onChangeText={(text) => {
+                        const val = parseInt(text || '0', 10) || 0;
+                        setGoals(prev => prev ? { ...prev, [item.key]: val } as any : prev);
+                      }}
+                    />
+                  </View>
+                ))}
+
+                <TouchableOpacity style={[styles.saveButton, themed.saveButton]} onPress={saveGoals}>
+                  <Text style={[styles.saveButtonText, themed.saveButtonText]}>{t.saveGoals}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Smartphone size={20} color={palette.primary} strokeWidth={2} />
+            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.accessibility}</Text>
           </View>
 
-          <View style={styles.card}>
+          <View style={[styles.card, themed.card]}>
             <View style={[styles.optionRow, styles.optionRowBorder]}>
               <View style={styles.optionContent}>
-                <Text style={styles.optionLabel}>Screen Reader Support</Text>
-                <Text style={styles.optionDescription}>
-                  Optimize for screen readers
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.screenReader}</Text>
+                <Text style={[styles.optionDescription, themed.optionDescription]}>
+                  {t.screenReaderDesc}
                 </Text>
               </View>
               <Switch
                 value={settings.accessibility.screenReader}
                 onValueChange={(value) => updateAccessibility({ screenReader: value })}
-                trackColor={{ false: Colors.border, true: Colors.primary }}
-                thumbColor={Colors.textWhite}
+                trackColor={{ false: palette.border, true: palette.primary }}
+                thumbColor={palette.text}
                 accessibilityLabel="Toggle screen reader support"
                 accessibilityRole="switch"
                 accessibilityState={{ checked: settings.accessibility.screenReader }}
@@ -279,16 +605,16 @@ export default function SettingsScreen() {
 
             <View style={[styles.optionRow, styles.optionRowBorder]}>
               <View style={styles.optionContent}>
-                <Text style={styles.optionLabel}>Haptic Feedback</Text>
-                <Text style={styles.optionDescription}>
-                  Vibrations for interactions
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.haptics}</Text>
+                <Text style={[styles.optionDescription, themed.optionDescription]}>
+                  {t.hapticsDesc}
                 </Text>
               </View>
               <Switch
                 value={settings.accessibility.hapticFeedback}
                 onValueChange={(value) => updateAccessibility({ hapticFeedback: value })}
-                trackColor={{ false: Colors.border, true: Colors.primary }}
-                thumbColor={Colors.textWhite}
+                trackColor={{ false: palette.border, true: palette.primary }}
+                thumbColor={palette.text}
                 accessibilityLabel="Toggle haptic feedback"
                 accessibilityRole="switch"
                 accessibilityState={{ checked: settings.accessibility.hapticFeedback }}
@@ -297,16 +623,16 @@ export default function SettingsScreen() {
 
             <View style={styles.optionRow}>
               <View style={styles.optionContent}>
-                <Text style={styles.optionLabel}>Voice Input</Text>
-                <Text style={styles.optionDescription}>
-                  Enable voice commands
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.voiceInput}</Text>
+                <Text style={[styles.optionDescription, themed.optionDescription]}>
+                  {t.voiceInputDesc}
                 </Text>
               </View>
               <Switch
                 value={settings.accessibility.voiceInput}
                 onValueChange={(value) => updateAccessibility({ voiceInput: value })}
-                trackColor={{ false: Colors.border, true: Colors.primary }}
-                thumbColor={Colors.textWhite}
+                trackColor={{ false: palette.border, true: palette.primary }}
+                thumbColor={palette.text}
                 accessibilityLabel="Toggle voice input"
                 accessibilityRole="switch"
                 accessibilityState={{ checked: settings.accessibility.voiceInput }}
@@ -322,11 +648,11 @@ export default function SettingsScreen() {
           accessibilityLabel="Reset all settings to default"
         >
           <RefreshCw size={20} color={Colors.error} strokeWidth={2} />
-          <Text style={styles.resetButtonText}>Reset to Default</Text>
+          <Text style={[styles.resetButtonText, themed.resetButtonText]}>{t.reset}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.footerText}>
-          These settings are designed to meet WCAG 2.1 AA accessibility standards
+        <Text style={[styles.footerText, themed.footerText]}>
+          {t.footer}
         </Text>
       </ScrollView>
     </View>
@@ -488,5 +814,28 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  numberInput: {
+    width: 90,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    textAlign: 'center',
+    color: Colors.text,
+    backgroundColor: Colors.backgroundSecondary,
+  },
+  saveButton: {
+    marginTop: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: Colors.textWhite,
+    fontWeight: '700' as const,
+    fontSize: 16,
   },
 });
