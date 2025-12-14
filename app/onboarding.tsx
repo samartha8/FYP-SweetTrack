@@ -1,12 +1,13 @@
 import { useState, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Animated, ColorValue, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Animated, ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Activity, Heart, MessageCircle, Camera, TrendingUp } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
-import { wp, hp, fontSize, scaleSize, isTablet, getResponsivePadding, getIconSize, SCREEN_WIDTH, SCREEN_HEIGHT } from '@/utils/responsive';
+
+const { width, height } = Dimensions.get('window');
 
 type OnboardingSlide = {
   id: number;
@@ -61,8 +62,6 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { completeOnboarding } = useUser();
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
-  const tablet = isTablet();
 
   const handleNext = () => {
     if (currentIndex < slides.length - 1) {
@@ -81,7 +80,7 @@ export default function OnboardingScreen() {
 
       const nextIndex = currentIndex + 1;
       setCurrentIndex(nextIndex);
-      scrollViewRef.current?.scrollTo({ x: SCREEN_WIDTH * nextIndex, animated: true });
+      scrollViewRef.current?.scrollTo({ x: width * nextIndex, animated: true });
     } else {
       handleGetStarted();
     }
@@ -111,7 +110,7 @@ export default function OnboardingScreen() {
     ]).start();
 
     setCurrentIndex(index);
-    scrollViewRef.current?.scrollTo({ x: SCREEN_WIDTH * index, animated: true });
+    scrollViewRef.current?.scrollTo({ x: width * index, animated: true });
   };
 
   return (
@@ -138,7 +137,7 @@ export default function OnboardingScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <slide.icon size={getIconSize(80)} color={Colors.textWhite} strokeWidth={1.5} />
+              <slide.icon size={80} color={Colors.textWhite} strokeWidth={1.5} />
             </LinearGradient>
 
             <Text style={styles.title}>{slide.title}</Text>
@@ -195,59 +194,59 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   slide: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT * 0.75,
+    width,
+    height: height * 0.75,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: getResponsivePadding(40),
+    paddingHorizontal: 40,
   },
   iconContainer: {
-    width: scaleSize(180),
-    height: scaleSize(180),
-    borderRadius: scaleSize(90),
+    width: 180,
+    height: 180,
+    borderRadius: 90,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: scaleSize(40),
+    marginBottom: 40,
     shadowColor: Colors.cardShadow,
-    shadowOffset: { width: 0, height: scaleSize(8) },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
-    shadowRadius: scaleSize(16),
+    shadowRadius: 16,
     elevation: 8,
   },
   title: {
-    fontSize: fontSize(28),
+    fontSize: 28,
     fontWeight: '700' as const,
     color: Colors.text,
     textAlign: 'center',
-    marginBottom: scaleSize(16),
-    paddingHorizontal: getResponsivePadding(20),
+    marginBottom: 16,
+    paddingHorizontal: 20,
   },
   description: {
-    fontSize: fontSize(16),
+    fontSize: 16,
     color: Colors.textSecondary,
     textAlign: 'center',
-    lineHeight: fontSize(24),
-    paddingHorizontal: getResponsivePadding(10),
+    lineHeight: 24,
+    paddingHorizontal: 10,
   },
   footer: {
-    paddingHorizontal: getResponsivePadding(30),
-    paddingBottom: hp(6),
+    paddingHorizontal: 30,
+    paddingBottom: 50,
   },
   pagination: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: scaleSize(30),
+    marginBottom: 30,
   },
   dot: {
-    width: scaleSize(8),
-    height: scaleSize(8),
-    borderRadius: scaleSize(4),
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: Colors.borderLight,
-    marginHorizontal: scaleSize(4),
+    marginHorizontal: 4,
   },
   dotActive: {
-    width: scaleSize(24),
+    width: 24,
     backgroundColor: Colors.primary,
   },
   buttonContainer: {
@@ -256,34 +255,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   skipButton: {
-    paddingVertical: scaleSize(12),
-    paddingHorizontal: scaleSize(24),
+    paddingVertical: 12,
+    paddingHorizontal: 24,
   },
   skipText: {
-    fontSize: fontSize(16),
+    fontSize: 16,
     color: Colors.textSecondary,
     fontWeight: '600' as const,
   },
   nextButton: {
     flex: 1,
-    marginLeft: scaleSize(16),
-    borderRadius: scaleSize(12),
+    marginLeft: 16,
+    borderRadius: 12,
     overflow: 'hidden',
     shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: scaleSize(4) },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: scaleSize(8),
+    shadowRadius: 8,
     elevation: 4,
   },
   nextButtonGradient: {
-    paddingVertical: scaleSize(16),
-    paddingHorizontal: scaleSize(32),
+    paddingVertical: 16,
+    paddingHorizontal: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: scaleSize(56),
   },
   nextText: {
-    fontSize: fontSize(16),
+    fontSize: 16,
     fontWeight: '700' as const,
     color: Colors.textWhite,
   },
