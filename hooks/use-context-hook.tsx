@@ -1,5 +1,18 @@
-import { createContext, useContext, ReactNode } from 'react';
+import { createContext, ReactNode, useContext } from 'react';
 
+/**
+ * Creates a context hook with provider
+ * Similar to @nkzw/create-context-hook but without external dependency
+ * 
+ * @param useValue - Function that returns the context value
+ * @returns Tuple of [Provider, useHook]
+ * 
+ * @example
+ * const [UserProvider, useUser] = createContextHook(() => {
+ *   const [user, setUser] = useState(null);
+ *   return { user, setUser };
+ * });
+ */
 export function createContextHook<T>(useValue: () => T) {
   const Context = createContext<T | null>(null);
 
@@ -18,3 +31,4 @@ export function createContextHook<T>(useValue: () => T) {
 
   return [Provider, useHook] as const;
 }
+
