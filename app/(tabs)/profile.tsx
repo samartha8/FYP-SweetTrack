@@ -4,13 +4,16 @@ import { useRouter } from 'expo-router';
 import { User as UserIcon, Mail, Calendar, Ruler, Weight, Heart, Settings, LogOut, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
+import { useState } from 'react';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, logout } = useUser();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleLogout = () => {
+    if (isLoggingOut) return;
     Alert.alert(
       'Logout',
       'Are you sure you want to logout?',
@@ -20,8 +23,13 @@ export default function ProfileScreen() {
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
-            await logout();
-            router.replace('/login' as any);
+            try {
+              setIsLoggingOut(true);
+              await logout();
+              router.replace('/login' as any);
+            } finally {
+              setIsLoggingOut(false);
+            }
           },
         },
       ]
@@ -120,9 +128,9 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} disabled={isLoggingOut}>
           <LogOut size={20} color={Colors.error} strokeWidth={2} />
-          <Text style={styles.logoutText}>Logout</Text>
+          <Text style={styles.logoutText}>{isLoggingOut ? 'Logging out...' : 'Logout'}</Text>
         </TouchableOpacity>
 
         <Text style={styles.versionText}>SweetTrack v1.0.0</Text>
