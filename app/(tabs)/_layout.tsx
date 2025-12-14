@@ -4,6 +4,7 @@ import React, { type ReactElement } from "react";
 import Colors from "@/constants/colors";
 import { HapticTab } from "@/components/haptic-tab";
 
+// Define the type locally instead of importing
 type TabBarIconProps = {
   focused: boolean;
   color: string;
@@ -46,7 +47,7 @@ export default function TabLayout(): ReactElement {
       <Tabs.Screen
         name="chatbot"
         options={{
-          title: "Ask",
+          title: "Ask Chori",
           tabBarIcon: ({ color, size }: TabBarIconProps) => <MessageCircle size={size} color={color} />,
         }}
       />
