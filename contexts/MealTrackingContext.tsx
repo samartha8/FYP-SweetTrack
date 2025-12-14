@@ -1,6 +1,8 @@
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Platform } from 'react-native';
+import { useUser } from './UserContext';
 
 export type MealLog = {
   id: string;
@@ -22,6 +24,7 @@ export type MealLog = {
   servingSize: string;
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   notes?: string;
+  backendId?: string;
 };
 
 export type WeeklyStats = {
@@ -44,10 +47,31 @@ export type DailyNutrition = {
 
 const STORAGE_KEY = '@sweettrack_meal_logs';
 
+const normalizeApiUrl = (url: string) => {
+  const trimmed = url.replace(/\/$/, '');
+  return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+};
+
+const getApiBaseUrl = () => {
+  const envBase = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL;
+  if (envBase) return normalizeApiUrl(envBase);
+
+  if (Platform.OS === 'web') return 'http://localhost:5000/api';
+
+  const hostOverride = process.env.EXPO_PUBLIC_API_HOST || process.env.API_HOST;
+  const port = process.env.EXPO_PUBLIC_API_PORT || process.env.API_PORT || '5000';
+  const defaultIP = '10.0.2.2';
+  const hostIP = hostOverride || (__DEV__ ? defaultIP : '192.168.0.111');
+  return `http://${hostIP}:${port}/api`;
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
 export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedDietPlan, setSelectedDietPlan] = useState<string>('balanced');
+  const { ensureAccessToken } = useUser();
 
   useEffect(() => {
     loadMealLogs();
@@ -58,6 +82,29 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       if (stored) {
         setMealLogs(JSON.parse(stored));
+      }
+      // Fetch latest from backend if token exists
+      const token = await ensureAccessToken?.();
+      if (token) {
+        const res = await fetch(`${API_BASE_URL}/meals`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok && data.success && data.mealLogs) {
+          const normalized = data.mealLogs.map((log: any) => ({
+            id: log._id,
+            backendId: log._id,
+            date: log.loggedAt || log.createdAt,
+            imageUri: log.imageUrl,
+            foodItems: log.foodItems || [],
+            nutritionalInfo: log.nutritionalInfo,
+            servingSize: log.servingSize,
+            mealType: log.mealType,
+            notes: log.notes,
+          }));
+          setMealLogs(normalized);
+          await saveMealLogs(normalized);
+        }
       }
     } catch (error) {
       console.error('Error loading meal logs:', error);
@@ -74,11 +121,54 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
     }
   };
 
-  const addMealLog = useCallback(async (meal: Omit<MealLog, 'id' | 'date'>) => {
+  const addMealLog = useCallback(async (meal: Omit<MealLog, 'id' | 'date'> & { imageFileUri?: string }) => {
+    const token = await ensureAccessToken?.();
+    const form = new FormData();
+    form.append('mealType', meal.mealType);
+    form.append('foodItems', JSON.stringify(meal.foodItems || []));
+    form.append('nutritionalInfo', JSON.stringify(meal.nutritionalInfo));
+    if (meal.servingSize) form.append('servingSize', meal.servingSize);
+    if (meal.notes) form.append('notes', meal.notes);
+    form.append('loggedAt', new Date().toISOString());
+
+    if (meal.imageUri) {
+      const uriParts = meal.imageUri.split('.');
+      const ext = uriParts[uriParts.length - 1];
+      form.append('image', {
+        uri: meal.imageUri,
+        name: `meal.${ext || 'jpg'}`,
+        type: `image/${ext || 'jpeg'}`,
+      } as any);
+    }
+
+    let backendLog: any = null;
+    if (token) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/meals`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+          body: form as any,
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          backendLog = data.mealLog;
+        } else {
+          console.error('Backend meal log failed:', data?.message);
+        }
+      } catch (error) {
+        console.error('Meal upload failed:', error);
+      }
+    }
+
     const newMeal: MealLog = {
       ...meal,
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
+      id: backendLog?._id || Date.now().toString(),
+      backendId: backendLog?._id,
+      date: backendLog?.loggedAt || new Date().toISOString(),
+      imageUri: backendLog?.imageUrl || meal.imageUri,
     };
 
     setMealLogs(prev => {
@@ -90,12 +180,24 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
     return newMeal;
   }, []);
 
-  const deleteMealLog = useCallback(async (mealId: string) => {
+  const deleteMealLog = useCallback(async (mealId: string, backendId?: string) => {
     setMealLogs(prev => {
-      const updated = prev.filter(meal => meal.id !== mealId);
+      const updated = prev.filter(meal => meal.id !== mealId && meal.backendId !== backendId);
       saveMealLogs(updated);
       return updated;
     });
+
+    const token = await AsyncStorage.getItem('@sweettrack_token');
+    if (token && backendId) {
+      try {
+        await fetch(`${API_BASE_URL}/meals/${backendId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (error) {
+        console.error('Backend delete meal log failed:', error);
+      }
+    }
   }, []);
 
   const updateMealLog = useCallback(async (mealId: string, updates: Partial<MealLog>) => {
