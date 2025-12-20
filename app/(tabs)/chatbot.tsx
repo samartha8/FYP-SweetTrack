@@ -1,5 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send, Bot, User as UserIcon } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -20,32 +29,45 @@ const QUICK_REPLIES = [
 ];
 
 const BOT_RESPONSES: Record<string, string> = {
-  'Diet Tips': 'Here are some diet tips:\n\n• Eat plenty of fruits and vegetables\n• Stay hydrated with 8 glasses of water daily\n• Include lean proteins in your meals\n• Limit processed foods and sugar\n• Practice portion control',
-  'Sleep Advice': 'For better sleep:\n\n• Maintain a consistent sleep schedule\n• Create a relaxing bedtime routine\n• Keep your bedroom cool and dark\n• Avoid screens 1 hour before bed\n• Limit caffeine after 2 PM',
-  'Exercise Plans': 'Recommended exercise routine:\n\n• 30 minutes of cardio 5 days a week\n• Strength training 2-3 times per week\n• Yoga or stretching daily\n• Take 10,000 steps daily\n• Stay active throughout the day',
-  'Stress Management': 'Manage stress effectively:\n\n• Practice deep breathing exercises\n• Try meditation for 10 minutes daily\n• Stay connected with loved ones\n• Engage in hobbies you enjoy\n• Get regular physical activity',
+  'Diet Tips':
+    'Here are some diet tips:\n\n• Eat plenty of fruits and vegetables\n• Stay hydrated with 8 glasses of water daily\n• Include lean proteins in your meals\n• Limit processed foods and sugar\n• Practice portion control',
+  'Sleep Advice':
+    'For better sleep:\n\n• Maintain a consistent sleep schedule\n• Create a relaxing bedtime routine\n• Keep your bedroom cool and dark\n• Avoid screens 1 hour before bed\n• Limit caffeine after 2 PM',
+  'Exercise Plans':
+    'Recommended exercise routine:\n\n• 30 minutes of cardio 5 days a week\n• Strength training 2-3 times per week\n• Yoga or stretching daily\n• Take 10,000 steps daily\n• Stay active throughout the day',
+  'Stress Management':
+    'Manage stress effectively:\n\n• Practice deep breathing exercises\n• Try meditation for 10 minutes daily\n• Stay connected with loved ones\n• Engage in hobbies you enjoy\n• Get regular physical activity',
 };
 
 export default function ChatbotScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useUser();
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: `Hello ${user?.name || 'there'}! I'm Chori, your health assistant. How can I help you today?`,
+      text: `Hello ${user?.name || 'there'}! I'm SweetTrack AI, your health assistant. How can I help you today?`,
       sender: 'bot',
       timestamp: new Date(),
     },
   ]);
+
   const [inputText, setInputText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
+  }, [messages, isTyping]);
 
+  // ✅ FIXED handleSend (NO undefined message now)
   const handleSend = (text?: string) => {
-    const messageText = text || inputText.trim();
+    const messageText =
+      typeof text === 'string' && text.trim().length > 0
+        ? text.trim()
+        : inputText.trim();
+
     if (!messageText) return;
 
     const userMessage: Message = {
@@ -57,16 +79,51 @@ export default function ChatbotScreen() {
 
     setMessages(prev => [...prev, userMessage]);
     setInputText('');
+    setIsTyping(true);
 
-    setTimeout(() => {
-      const botResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: BOT_RESPONSES[messageText] || 'Thank you for your message! I\'m here to help with your health and wellness questions. Try asking about diet tips, sleep advice, exercise plans, or stress management.',
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, botResponse]);
-    }, 1000);
+    (async () => {
+      try {
+        const res = await fetch('http://localhost:5000/api/chatbot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: messageText,
+            riskLevel: user?.medicalHistory?.length ? 'Higher Risk' : 'General',
+          }),
+        });
+
+        const data = await res.json();
+
+        const reply =
+          data?.success && data?.reply
+            ? data.reply
+            : BOT_RESPONSES[messageText] ||
+              'I am here to support your general wellness.';
+
+        const botMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          text: reply,
+          sender: 'bot',
+          timestamp: new Date(),
+        };
+
+        setMessages(prev => [...prev, botMessage]);
+      } catch (error) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            text:
+              BOT_RESPONSES[messageText] ||
+              'I am currently having trouble responding. Please try again later.',
+            sender: 'bot',
+            timestamp: new Date(),
+          },
+        ]);
+      } finally {
+        setIsTyping(false);
+      }
+    })();
   };
 
   return (
@@ -80,7 +137,7 @@ export default function ChatbotScreen() {
           <Bot size={28} color={Colors.primary} strokeWidth={2} />
         </View>
         <View style={styles.headerText}>
-          <Text style={styles.headerTitle}>Ask Chori</Text>
+          <Text style={styles.headerTitle}>Ask SweetTrack AI</Text>
           <Text style={styles.headerSubtitle}>Your AI Health Assistant</Text>
         </View>
       </View>
@@ -91,12 +148,14 @@ export default function ChatbotScreen() {
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
       >
-        {messages.map((message) => (
+        {messages.map(message => (
           <View
             key={message.id}
             style={[
               styles.messageBubble,
-              message.sender === 'user' ? styles.userBubble : styles.botBubble,
+              message.sender === 'user'
+                ? styles.userBubble
+                : styles.botBubble,
             ]}
           >
             <View style={styles.messageHeader}>
@@ -105,35 +164,46 @@ export default function ChatbotScreen() {
               ) : (
                 <UserIcon size={20} color={Colors.textWhite} strokeWidth={2} />
               )}
-              <Text style={[
-                styles.messageSender,
-                message.sender === 'user' && styles.userMessageSender,
-              ]}>
+              <Text
+                style={[
+                  styles.messageSender,
+                  message.sender === 'user' && styles.userMessageSender,
+                ]}
+              >
                 {message.sender === 'bot' ? 'Chori' : 'You'}
               </Text>
             </View>
-            <Text style={[
-              styles.messageText,
-              message.sender === 'user' && styles.userMessageText,
-            ]}>
+            <Text
+              style={[
+                styles.messageText,
+                message.sender === 'user' && styles.userMessageText,
+              ]}
+            >
               {message.text}
             </Text>
-            <Text style={[
-              styles.messageTime,
-              message.sender === 'user' && styles.userMessageTime,
-            ]}>
-              {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            <Text
+              style={[
+                styles.messageTime,
+                message.sender === 'user' && styles.userMessageTime,
+              ]}
+            >
+              {message.timestamp.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
             </Text>
           </View>
         ))}
+
+        {isTyping && (
+          <Text style={{ marginLeft: 20, color: Colors.textLight }}>
+            Chori is typing...
+          </Text>
+        )}
       </ScrollView>
 
       <View style={styles.quickRepliesContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickRepliesContent}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {QUICK_REPLIES.map((reply, index) => (
             <TouchableOpacity
               key={index}
@@ -157,7 +227,10 @@ export default function ChatbotScreen() {
           maxLength={500}
         />
         <TouchableOpacity
-          style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
+          style={[
+            styles.sendButton,
+            !inputText.trim() && styles.sendButtonDisabled,
+          ]}
           onPress={() => handleSend()}
           disabled={!inputText.trim()}
         >
@@ -196,7 +269,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '700' as const,
+    fontWeight: '700',
     color: Colors.text,
   },
   headerSubtitle: {
@@ -209,7 +282,6 @@ const styles = StyleSheet.create({
   },
   messagesContent: {
     padding: 20,
-    paddingBottom: 10,
   },
   messageBubble: {
     maxWidth: '80%',
@@ -234,7 +306,7 @@ const styles = StyleSheet.create({
   },
   messageSender: {
     fontSize: 12,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: Colors.primary,
     marginLeft: 6,
   },
@@ -244,7 +316,6 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 15,
     color: Colors.text,
-    lineHeight: 22,
   },
   userMessageText: {
     color: Colors.textWhite,
@@ -255,7 +326,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   userMessageTime: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: 'rgba(255,255,255,0.7)',
   },
   quickRepliesContainer: {
     backgroundColor: Colors.background,
@@ -263,11 +334,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.border,
   },
-  quickRepliesContent: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
   quickReplyButton: {
+    marginHorizontal: 8,
     backgroundColor: Colors.backgroundSecondary,
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -277,7 +345,7 @@ const styles = StyleSheet.create({
   },
   quickReplyText: {
     fontSize: 14,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: Colors.primary,
   },
   inputContainer: {
