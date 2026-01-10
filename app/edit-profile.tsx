@@ -20,13 +20,21 @@ export default function EditProfileScreen() {
   const router = useRouter();
   const { user, updateUser } = useUser();
 
+  // Helper to get gender string from sex code
+  const getGenderString = (sex?: number) => {
+    if (sex === 1) return 'Male';
+    if (sex === 0) return 'Female';
+    return '';
+  };
+
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
     age: user?.age?.toString() || '',
-    gender: user?.gender || '',
+    gender: getGenderString(user?.sex) || '',
     height: user?.height?.toString() || '',
     weight: user?.weight?.toString() || '',
+    // Maintain strict typing for numeric fields
   });
 
   const [medicalHistory, setMedicalHistory] = useState<string[]>(user?.medicalHistory || []);
@@ -38,11 +46,18 @@ export default function EditProfileScreen() {
       return;
     }
 
+    // Map gender string back to sex code
+    let sex: number | undefined;
+    if (formData.gender === 'Male') sex = 1;
+    else if (formData.gender === 'Female') sex = 0;
+
     const updates = {
       name: formData.name,
       email: formData.email,
       age: formData.age ? parseInt(formData.age) : undefined,
-      gender: formData.gender || undefined,
+      sex: sex, // Save as sex
+      // Legacy gender field update just in case
+      gender: formData.gender,
       height: formData.height ? parseFloat(formData.height) : undefined,
       weight: formData.weight ? parseFloat(formData.weight) : undefined,
       medicalHistory,
@@ -68,7 +83,7 @@ export default function EditProfileScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      
+
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
           <X size={24} color={Colors.text} strokeWidth={2} />
@@ -218,7 +233,7 @@ export default function EditProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Medical History</Text>
-          
+
           <View style={styles.addConditionContainer}>
             <TextInput
               style={styles.addConditionInput}
