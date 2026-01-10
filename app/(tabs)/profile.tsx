@@ -36,10 +36,30 @@ export default function ProfileScreen() {
     );
   };
 
+  // Helper to map sex code to string
+  const getGenderString = (sex?: number) => {
+    if (sex === 1) return 'Male';
+    if (sex === 0) return 'Female';
+    return 'Not set';
+  };
+
+  // Helper to get age display
+  const getAgeDisplay = (age?: number) => {
+    if (!age) return 'Not set';
+    // If age is a category (1-13), map to range
+    if (age <= 13) {
+      const ranges = ['18-24', '25-29', '30-34', '35-39', '40-44', '45-49', '50-54', '55-59', '60-64', '65-69', '70-74', '75-79', '80+'];
+      const range = ranges[age - 1]; // 1-based index
+      return range ? `Age Group: ${range}` : `${age} years`;
+    }
+    // Otherwise assume valid age years
+    return `${age} years`;
+  };
+
   const profileInfo = [
     { icon: Mail, label: 'Email', value: user?.email || 'Not set' },
-    { icon: Calendar, label: 'Age', value: user?.age ? `${user.age} years` : 'Not set' },
-    { icon: UserIcon, label: 'Gender', value: user?.gender || 'Not set' },
+    { icon: Calendar, label: 'Age', value: getAgeDisplay(user?.age) },
+    { icon: UserIcon, label: 'Gender', value: getGenderString(user?.sex) },
     { icon: Ruler, label: 'Height', value: user?.height ? `${user.height} cm` : 'Not set' },
     { icon: Weight, label: 'Weight', value: user?.weight ? `${user.weight} kg` : 'Not set' },
   ];
@@ -68,7 +88,7 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.userName}>{user?.name || 'User'}</Text>
           <Text style={styles.userEmail}>{user?.email || 'email@example.com'}</Text>
-          
+
           <TouchableOpacity style={styles.editButton} onPress={() => router.push('/edit-profile' as any)}>
             <Text style={styles.editButtonText}>Edit Profile</Text>
           </TouchableOpacity>
