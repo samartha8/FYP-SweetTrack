@@ -3,15 +3,15 @@ import { Language, useSettings } from '@/contexts/SettingsContext';
 import { useUser } from '@/contexts/UserContext';
 import { Stack, useRouter } from 'expo-router';
 import {
-    Bell,
-    Eye,
-    Globe,
-    RefreshCw,
-    Smartphone,
-    Target,
-    X,
+  Bell,
+  Eye,
+  Globe,
+  RefreshCw,
+  Smartphone,
+  Target,
+  X,
 } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -225,11 +225,14 @@ export default function SettingsScreen() {
     return `http://${hostIP}:${port}/api`;
   })();
 
-  const loadGoals = async () => {
+  const loadGoals = useCallback(async () => {
     try {
       setGoalsLoading(true);
       const token = await ensureAccessToken();
       if (!token) return;
+
+      console.log('Fetching goals from:', `${API_BASE_URL}/notifications/goals`);
+
       const res = await fetch(`${API_BASE_URL}/notifications/goals`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -248,7 +251,7 @@ export default function SettingsScreen() {
     } finally {
       setGoalsLoading(false);
     }
-  };
+  }, [ensureAccessToken, API_BASE_URL]);
 
   const saveGoals = async () => {
     try {
@@ -454,9 +457,9 @@ export default function SettingsScreen() {
                 disabled={!settings.notifications.enabled}
                 accessibilityLabel="Toggle daily reminders"
                 accessibilityRole="switch"
-                accessibilityState={{ 
+                accessibilityState={{
                   checked: settings.notifications.dailyReminders,
-                  disabled: !settings.notifications.enabled 
+                  disabled: !settings.notifications.enabled
                 }}
               />
             </View>
@@ -476,9 +479,9 @@ export default function SettingsScreen() {
                 disabled={!settings.notifications.enabled}
                 accessibilityLabel="Toggle goal alerts"
                 accessibilityRole="switch"
-                accessibilityState={{ 
+                accessibilityState={{
                   checked: settings.notifications.goalAlerts,
-                  disabled: !settings.notifications.enabled 
+                  disabled: !settings.notifications.enabled
                 }}
               />
             </View>
@@ -498,9 +501,9 @@ export default function SettingsScreen() {
                 disabled={!settings.notifications.enabled}
                 accessibilityLabel="Toggle health tips"
                 accessibilityRole="switch"
-                accessibilityState={{ 
+                accessibilityState={{
                   checked: settings.notifications.healthTips,
-                  disabled: !settings.notifications.enabled 
+                  disabled: !settings.notifications.enabled
                 }}
               />
             </View>
