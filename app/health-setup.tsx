@@ -18,72 +18,78 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+
 type HealthFormData = {
-  age: string;
-  gender: string;
-  height: string; // cm - used to calculate BMI
-  weight: string; // kg - used to calculate BMI
-  bmi?: string; // computed (display only) — kept as string for UI
-  bloodGlucose: string; // mg/dL
-  hba1c: string; // %
-  bloodPressureSystolic: string;
-  bloodPressureDiastolic: string;
-  cholesterol: string; // mg/dL or highchol (text)
-  smoking: string; // Never/Former/Current
-  physicalActivityMinutes: string; // minutes per week
-  dailySteps: string; // steps per day
-  hypertension: string; // Yes/No
-  heartDiseaseHistory: string; // Yes/No
+  // Personal Info
+  age: string;              // Age category (1-13)
+  sex: string;              // Gender (0=Female, 1=Male)
+  height: string;           // cm - for BMI calculation
+  weight: string;           // kg - for BMI calculation
+  bmi?: string;             // Computed or manual (12-98)
+
+  // Medical Measurements
+  highBP: string;           // High blood pressure (0/1)
+  highChol: string;         // High cholesterol (0/1)
+  genHlth: string;          // General health (1-5)
+
+  // Lifestyle
+  smoker: string;           // Smoking history (0/1)
+  physActivity: string;     // Physical activity (0/1)
+
+  // Medical History
+  heartDiseaseOrAttack: string; // Heart disease/MI history (0/1)
+
+  // Engineered Features (auto-calculated or manual)
+  hba1cEstimated?: string;      // Estimated HbA1c (3.5-15.0)
+  bloodGlucoseEstimated?: string; // Estimated glucose (70-300)
 };
 
 type Step = 'features' | 'personal' | 'lifestyle' | 'medical' | 'review';
 
 const featureHighlights = [
-  { title: 'Blood Glucose Level', description: 'Monitor fasting and random glucose trends to catch spikes early.' },
-  { title: 'HbA1c', description: 'Track 3-month blood sugar average to understand long-term control.' },
-  { title: 'BMI', description: 'Automatically calculated from your height and weight for risk scoring.' },
-  { title: 'Age', description: 'Age-adjusted insights personalize prevention strategies.' },
-  { title: 'Blood Pressure', description: 'Keep systolic/diastolic readings to spot hypertension risk.' },
-  { title: 'Cholesterol / HighChol', description: 'Document lipid levels to understand cardiovascular impact.' },
-  { title: 'Smoking history', description: 'Identify lifestyle risks that affect glucose sensitivity.' },
-  { title: 'Physical activity minutes', description: 'Log weekly movement to unlock precise coaching tips.' },
-  { title: 'Daily steps', description: 'Sync or enter step counts to fuel rewards and streaks.' },
-  { title: 'Hypertension', description: 'Record diagnoses to tailor risk warnings and nudges.' },
-  { title: 'Heart disease history', description: 'Capture cardiac history for proactive monitoring.' },
+  { title: 'BMI (Body Mass Index)', description: 'Automatically calculated from height and weight. Range: 12-98.' },
+  { title: 'Age Category', description: 'Age groups from 18-24 to 80+. Used for age-adjusted risk scoring.' },
+  { title: 'High Blood Pressure', description: 'Indicator of hypertension status (Yes/No).' },
+  { title: 'High Cholesterol', description: 'Indicator of high cholesterol levels (Yes/No).' },
+  { title: 'Smoking History', description: 'Have you smoked at least 100 cigarettes in your lifetime? (Yes/No).' },
+  { title: 'Physical Activity', description: 'Any physical activity in past 30 days excluding work (Yes/No).' },
+  { title: 'Heart Disease History', description: 'History of coronary heart disease or heart attack (Yes/No).' },
+  { title: 'General Health', description: 'Self-rated health status from Excellent to Poor (1-5 scale).' },
+  { title: 'Gender', description: 'Biological sex for demographic analysis (Male/Female).' },
+  { title: 'HbA1c (Estimated)', description: 'Estimated 3-month average blood sugar (auto-calculated or manual entry).' },
+  { title: 'Blood Glucose (Estimated)', description: 'Estimated fasting blood glucose (auto-calculated or manual entry).' },
 ];
 
 export default function HealthSetupScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, updateUser, completeHealthSetup } = useUser();
+  const { user, updateUser, completeHealthSetup, ensureAccessToken } = useUser();
 
   const [currentStep, setCurrentStep] = useState<Step>('features');
   const [isLoading, setIsLoading] = useState(false);
 
   const [formData, setFormData] = useState<HealthFormData>({
     age: '',
-    gender: '',
+    sex: '',
     height: '',
     weight: '',
     bmi: '',
-    bloodGlucose: '',
-    hba1c: '',
-    bloodPressureSystolic: '',
-    bloodPressureDiastolic: '',
-    cholesterol: '',
-    smoking: '',
-    physicalActivityMinutes: '',
-    dailySteps: '',
-    hypertension: '',
-    heartDiseaseHistory: '',
+    highBP: '',
+    highChol: '',
+    genHlth: '',
+    smoker: '',
+    physActivity: '',
+    heartDiseaseOrAttack: '',
+    hba1cEstimated: '',
+    bloodGlucoseEstimated: '',
   });
 
   const steps: { key: Step; title: string; description: string }[] = [
     { key: 'features', title: 'Top Health Priorities', description: 'Review the 11 essentials we track after signup' },
-    { key: 'personal', title: 'Personal Information', description: 'Age and BMI to shape baseline risk' },
-    { key: 'lifestyle', title: 'Lifestyle', description: 'Smoking, activity minutes and daily steps' },
-    { key: 'medical', title: 'Medical Measurements', description: 'Glucose, HbA1c, Cholesterol and BP' },
+    { key: 'personal', title: 'Personal Information', description: 'Age, gender and BMI for baseline risk' },
+    { key: 'lifestyle', title: 'Lifestyle', description: 'Smoking and physical activity habits' },
+    { key: 'medical', title: 'Medical Measurements', description: 'Blood pressure, cholesterol and health status' },
     { key: 'review', title: 'Review & Submit', description: 'Quick summary before saving' },
   ];
 
@@ -91,10 +97,10 @@ export default function HealthSetupScreen() {
   const progress = ((currentStepIndex + 1) / steps.length) * 100;
 
   const updateField = (field: keyof HealthFormData, value: string) => {
-    // If height or weight change, update BMI immediately
     setFormData(prev => {
       const next = { ...prev, [field]: value };
 
+      // Calculate BMI if height or weight change
       if (field === 'height' || field === 'weight') {
         const h = parseFloat(field === 'height' ? value : next.height);
         const w = parseFloat(field === 'weight' ? value : next.weight);
@@ -108,6 +114,36 @@ export default function HealthSetupScreen() {
         }
       }
 
+      // Auto-calculate HbA1c_estimated if all required fields are present
+      if (['bmi', 'age', 'genHlth', 'highChol', 'highBP'].includes(field) || field === 'height' || field === 'weight') {
+        const bmi = parseFloat(next.bmi || '0');
+        const age = parseFloat(next.age || '0');
+        const genHlth = parseFloat(next.genHlth || '0');
+        const highChol = parseFloat(next.highChol || '0');
+        const highBP = parseFloat(next.highBP || '0');
+
+        if (bmi > 0 && age > 0 && genHlth > 0) {
+          const hba1c = 4.5 + (bmi - 25) * 0.03 + (age - 7) * 0.15 + genHlth * 0.4 + highChol * 0.8 + highBP * 0.6;
+          const clampedHba1c = Math.max(3.5, Math.min(15.0, hba1c));
+          next.hba1cEstimated = clampedHba1c.toFixed(2);
+        }
+      }
+
+      // Auto-calculate BloodGlucose_estimated if all required fields are present
+      if (['bmi', 'age', 'genHlth', 'highChol', 'highBP'].includes(field) || field === 'height' || field === 'weight') {
+        const bmi = parseFloat(next.bmi || '0');
+        const age = parseFloat(next.age || '0');
+        const genHlth = parseFloat(next.genHlth || '0');
+        const highChol = parseFloat(next.highChol || '0');
+        const highBP = parseFloat(next.highBP || '0');
+
+        if (bmi > 0 && age > 0 && genHlth > 0) {
+          const glucose = 85 + (bmi - 25) * 1.2 + (age - 7) * 3.0 + genHlth * 8 + highChol * 15 + highBP * 12;
+          const clampedGlucose = Math.max(70, Math.min(300, glucose));
+          next.bloodGlucoseEstimated = clampedGlucose.toFixed(1);
+        }
+      }
+
       return next;
     });
   };
@@ -117,13 +153,35 @@ export default function HealthSetupScreen() {
       case 'features':
         return true;
       case 'personal':
-        // age is required, height and weight to compute BMI (but allow manual bmi if present)
-        return !!(formData.age && ((formData.height && formData.weight) || formData.bmi));
+        // Require age (1-13), sex (0/1), and BMI (via height/weight)
+        const ageNum = parseInt(formData.age);
+        const sexNum = parseInt(formData.sex);
+        const bmiNum = parseFloat(formData.bmi || '0');
+        return !!(
+          formData.age && ageNum >= 1 && ageNum <= 13 &&
+          formData.sex && (sexNum === 0 || sexNum === 1) &&
+          ((formData.height && formData.weight) || (bmiNum >= 12 && bmiNum <= 98))
+        );
       case 'lifestyle':
-        return !!(formData.smoking && formData.physicalActivityMinutes && formData.dailySteps);
+        // Require smoker (0/1), physActivity (0/1)
+        const smokerNum = parseInt(formData.smoker);
+        const physActivityNum = parseInt(formData.physActivity);
+        return !!(
+          formData.smoker && (smokerNum === 0 || smokerNum === 1) &&
+          formData.physActivity && (physActivityNum === 0 || physActivityNum === 1)
+        );
       case 'medical':
-        // require at least bloodGlucose or hba1c or cholesterol (we still encourage BP and hypertension)
-        return !!(formData.bloodGlucose || formData.hba1c || formData.cholesterol || (formData.bloodPressureSystolic && formData.bloodPressureDiastolic));
+        // Require highBP, highChol, genHlth, heartDiseaseOrAttack
+        const highBPNum = parseInt(formData.highBP);
+        const highCholNum = parseInt(formData.highChol);
+        const genHlthNum = parseInt(formData.genHlth);
+        const heartNum = parseInt(formData.heartDiseaseOrAttack);
+        return !!(
+          formData.highBP && (highBPNum === 0 || highBPNum === 1) &&
+          formData.highChol && (highCholNum === 0 || highCholNum === 1) &&
+          formData.genHlth && genHlthNum >= 1 && genHlthNum <= 5 &&
+          formData.heartDiseaseOrAttack && (heartNum === 0 || heartNum === 1)
+        );
       case 'review':
         return true;
       default:
@@ -149,33 +207,62 @@ export default function HealthSetupScreen() {
   const handleSubmit = async () => {
     setIsLoading(true);
     try {
-      // Prepare payload converting strings to numbers where appropriate
       const heightNum = formData.height ? parseFloat(formData.height) : undefined;
       const weightNum = formData.weight ? parseFloat(formData.weight) : undefined;
-      const bmiNum = formData.bmi ? parseFloat(formData.bmi) : (heightNum && weightNum ? Number(((weightNum) / ((heightNum / 100) ** 2)).toFixed(1)) : undefined);
+      const bmiNum = formData.bmi ? parseFloat(formData.bmi) : undefined;
 
       const healthData = {
+        // Personal
         age: formData.age ? parseInt(formData.age, 10) : undefined,
-        gender: formData.gender || undefined,
+        sex: formData.sex ? parseInt(formData.sex, 10) : undefined,
         height: heightNum,
         weight: weightNum,
         bmi: bmiNum,
-        bloodGlucose: formData.bloodGlucose ? parseFloat(formData.bloodGlucose) : undefined,
-        hba1c: formData.hba1c ? parseFloat(formData.hba1c) : undefined,
-        bloodPressure: (formData.bloodPressureSystolic && formData.bloodPressureDiastolic)
-          ? {
-              systolic: parseInt(formData.bloodPressureSystolic, 10),
-              diastolic: parseInt(formData.bloodPressureDiastolic, 10),
-            }
-          : undefined,
-        cholesterol: formData.cholesterol || undefined,
-        smoking: formData.smoking || undefined,
-        physicalActivityMinutes: formData.physicalActivityMinutes ? parseInt(formData.physicalActivityMinutes, 10) : undefined,
-        dailySteps: formData.dailySteps ? parseInt(formData.dailySteps, 10) : undefined,
-        hypertension: formData.hypertension || undefined,
-        heartDiseaseHistory: formData.heartDiseaseHistory || undefined,
+
+        // Medical
+        highBP: formData.highBP ? parseInt(formData.highBP, 10) : undefined,
+        highChol: formData.highChol ? parseInt(formData.highChol, 10) : undefined,
+        genHlth: formData.genHlth ? parseInt(formData.genHlth, 10) : undefined,
+
+        // Lifestyle
+        smoker: formData.smoker ? parseInt(formData.smoker, 10) : undefined,
+        physActivity: formData.physActivity ? parseInt(formData.physActivity, 10) : undefined,
+
+        // Medical History
+        heartDiseaseOrAttack: formData.heartDiseaseOrAttack ? parseInt(formData.heartDiseaseOrAttack, 10) : undefined,
+
+        // Engineered
+        hba1cEstimated: formData.hba1cEstimated ? parseFloat(formData.hba1cEstimated) : undefined,
+        bloodGlucoseEstimated: formData.bloodGlucoseEstimated ? parseFloat(formData.bloodGlucoseEstimated) : undefined,
       };
 
+      // 1. Save to Backend (Crucial for persistence)
+      try {
+        const token = await ensureAccessToken();
+        const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5000';
+
+        console.log("Saving health data to backend...");
+        const saveRes = await fetch(`${API_URL}/api/health`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token || ''}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(healthData)
+        });
+
+        const saveJson = await saveRes.json();
+        if (!saveRes.ok) {
+          console.error("Backend save failed:", saveJson);
+          // We continue anyway so user isn't stuck, but log it
+        } else {
+          console.log("Backend save success:", saveJson);
+        }
+      } catch (saveError) {
+        console.error("Network error saving to backend:", saveError);
+      }
+
+      // 2. Update Local Context
       if (!user) {
         await updateUser({
           id: Date.now().toString(),
@@ -188,6 +275,30 @@ export default function HealthSetupScreen() {
       }
 
       await completeHealthSetup();
+
+      // Trigger initial prediction
+      try {
+        const token = await ensureAccessToken();
+        const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5000';
+
+        console.log("Triggering prediction with data:", JSON.stringify(healthData));
+        const res = await fetch(`${API_URL}/api/diabetes/predict`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token || ''}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ...healthData,
+            glucose: healthData.bloodGlucoseEstimated // Ensure key consistency
+          })
+        });
+        const resJson = await res.json();
+        console.log("Prediction response:", resJson);
+      } catch (e) {
+        console.log("Initial prediction failed", e);
+      }
+
       router.replace('/(tabs)/home' as any);
     } catch (err) {
       console.error('Error saving health data:', err);
@@ -234,25 +345,85 @@ export default function HealthSetupScreen() {
       <View style={styles.infoCard}>
         <Info size={20} color={Colors.primary} />
         <Text style={styles.infoText}>
-          Provide age and body measurements so we can compute baseline BMI and risk.
+          Provide your age group, gender, and body measurements for BMI calculation.
         </Text>
       </View>
 
+      {/* Age Category */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Age <Text style={styles.required}>*</Text></Text>
-        <TextInput
-          style={[styles.input, { width: width * 0.9, maxWidth: 400 }]}
-          placeholder="Enter your age"
-          placeholderTextColor={Colors.textLight}
-          value={formData.age}
-          onChangeText={(text) => updateField('age', text.replace(/[^0-9]/g, ''))}
-          keyboardType="number-pad"
-        />
+        <Text style={styles.label}>Age Category <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>Select your age group</Text>
+        <View style={styles.radioGroup}>
+          {[
+            { value: '1', label: '18-24' },
+            { value: '2', label: '25-29' },
+            { value: '3', label: '30-34' },
+            { value: '4', label: '35-39' },
+            { value: '5', label: '40-44' },
+            { value: '6', label: '45-49' },
+            { value: '7', label: '50-54' },
+            { value: '8', label: '55-59' },
+            { value: '9', label: '60-64' },
+            { value: '10', label: '65-69' },
+            { value: '11', label: '70-74' },
+            { value: '12', label: '75-79' },
+            { value: '13', label: '80+' },
+          ].map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={[
+                styles.radioButton,
+                formData.age === option.value && styles.radioButtonActive,
+              ]}
+              onPress={() => updateField('age', option.value)}
+            >
+              <Text
+                style={[
+                  styles.radioText,
+                  formData.age === option.value && styles.radioTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
+      {/* Gender */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Gender <Text style={styles.required}>*</Text></Text>
+        <View style={styles.radioGroup}>
+          {[
+            { value: '0', label: 'Female' },
+            { value: '1', label: 'Male' },
+          ].map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={[
+                styles.radioButton,
+                formData.sex === option.value && styles.radioButtonActive,
+                { flex: 1 }
+              ]}
+              onPress={() => updateField('sex', option.value)}
+            >
+              <Text
+                style={[
+                  styles.radioText,
+                  formData.sex === option.value && styles.radioTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Height and Weight */}
       <View style={styles.row}>
         <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-          <Text style={styles.label}>Height (cm)</Text>
+          <Text style={styles.label}>Height (cm) <Text style={styles.required}>*</Text></Text>
           <TextInput
             style={[styles.input, { width: '100%' }]}
             placeholder="e.g., 175"
@@ -263,7 +434,7 @@ export default function HealthSetupScreen() {
           />
         </View>
         <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-          <Text style={styles.label}>Weight (kg)</Text>
+          <Text style={styles.label}>Weight (kg) <Text style={styles.required}>*</Text></Text>
           <TextInput
             style={[styles.input, { width: '100%' }]}
             placeholder="e.g., 70"
@@ -275,15 +446,22 @@ export default function HealthSetupScreen() {
         </View>
       </View>
 
-      <View style={{ marginTop: 8 }}>
-        <Text style={styles.helperText}>BMI will be calculated from height and weight.</Text>
-        <View style={[styles.featureCard, { marginTop: 12 }]}>
-          <Text style={styles.featureTitle}>BMI</Text>
-          <Text style={[styles.featureDescription, { marginTop: 4 }]}>
-            {formData.bmi ? `${formData.bmi} kg/m²` : 'Enter height and weight to calculate BMI'}
+      {/* BMI Display */}
+      {formData.bmi && (
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>BMI (Calculated)</Text>
+          <View style={[styles.input, { backgroundColor: Colors.primaryLight + '20', borderColor: Colors.primary }]}>
+            <Text style={{ fontSize: 16, color: Colors.text, fontWeight: '700' }}>
+              {formData.bmi}
+            </Text>
+          </View>
+          <Text style={styles.helperText}>
+            {parseFloat(formData.bmi) < 18.5 ? 'Underweight' :
+              parseFloat(formData.bmi) < 25 ? 'Normal weight' :
+                parseFloat(formData.bmi) < 30 ? 'Overweight' : 'Obese'}
           </Text>
         </View>
-      </View>
+      )}
     </View>
   );
 
@@ -292,49 +470,78 @@ export default function HealthSetupScreen() {
       <View style={styles.infoCard}>
         <Info size={20} color={Colors.primary} />
         <Text style={styles.infoText}>
-          Lifestyle details let us personalize recommendations — be honest.
+          Lifestyle factors like smoking and physical activity affect diabetes risk.
         </Text>
       </View>
 
+      {/* Smoking History */}
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Smoking History <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>Have you smoked at least 100 cigarettes in your lifetime?</Text>
         <View style={styles.radioGroup}>
-          {['Never', 'Former', 'Current'].map(option => (
+          {[
+            { value: '0', label: 'No' },
+            { value: '1', label: 'Yes' },
+          ].map((option) => (
             <TouchableOpacity
-              key={option}
-              style={[styles.radioButton, formData.smoking === option && styles.radioButtonActive, { width: (width * 0.9 - 40) / 3, maxWidth: 120 }]}
-              onPress={() => updateField('smoking', option)}
+              key={option.value}
+              style={[
+                styles.radioButton,
+                formData.smoker === option.value && styles.radioButtonActive,
+                { flex: 1 }
+              ]}
+              onPress={() => updateField('smoker', option.value)}
             >
-              <Text style={[styles.radioText, formData.smoking === option && styles.radioTextActive]}>{option}</Text>
+              <Text
+                style={[
+                  styles.radioText,
+                  formData.smoker === option.value && styles.radioTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
+        <Text style={styles.helperText}>
+          100 cigarettes = 5 packs
+        </Text>
       </View>
 
+      {/* Physical Activity */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Physical Activity (minutes per week) <Text style={styles.required}>*</Text></Text>
-        <TextInput
-          style={[styles.input, { width: width * 0.9, maxWidth: 400 }]}
-          placeholder="e.g., 150"
-          placeholderTextColor={Colors.textLight}
-          value={formData.physicalActivityMinutes}
-          onChangeText={(text) => updateField('physicalActivityMinutes', text.replace(/[^0-9]/g, ''))}
-          keyboardType="number-pad"
-        />
-        <Text style={styles.helperText}>WHO recommends ≥150 minutes of moderate activity weekly for adults.</Text>
-      </View>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Daily Steps <Text style={styles.required}>*</Text></Text>
-        <TextInput
-          style={[styles.input, { width: width * 0.9, maxWidth: 400 }]}
-          placeholder="e.g., 7000"
-          placeholderTextColor={Colors.textLight}
-          value={formData.dailySteps}
-          onChangeText={(text) => updateField('dailySteps', text.replace(/[^0-9]/g, ''))}
-          keyboardType="number-pad"
-        />
-        <Text style={styles.helperText}>Daily steps help tailor activity targets and rewards.</Text>
+        <Text style={styles.label}>Physical Activity <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>
+          Any physical activity in past 30 days? (Not including job)
+        </Text>
+        <View style={styles.radioGroup}>
+          {[
+            { value: '0', label: 'No' },
+            { value: '1', label: 'Yes' },
+          ].map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={[
+                styles.radioButton,
+                formData.physActivity === option.value && styles.radioButtonActive,
+                { flex: 1 }
+              ]}
+              onPress={() => updateField('physActivity', option.value)}
+            >
+              <Text
+                style={[
+                  styles.radioText,
+                  formData.physActivity === option.value && styles.radioTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={styles.helperText}>
+          Examples: running, walking, gardening, sports
+        </Text>
       </View>
     </View>
   );
@@ -344,288 +551,325 @@ export default function HealthSetupScreen() {
       <View style={styles.infoCard}>
         <Info size={20} color={Colors.primary} />
         <Text style={styles.infoText}>
-          Add your recent medical measurements. These improve prediction accuracy.
+          Medical measurements and history for comprehensive diabetes risk assessment.
         </Text>
       </View>
 
+      {/* High Blood Pressure */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Blood Glucose Level (mg/dL)</Text>
-        <TextInput
-          style={[styles.input, { width: width * 0.9, maxWidth: 400 }]}
-          placeholder="e.g., 95"
-          placeholderTextColor={Colors.textLight}
-          value={formData.bloodGlucose}
-          onChangeText={(text) => updateField('bloodGlucose', text.replace(/[^0-9.]/g, ''))}
-          keyboardType="decimal-pad"
-        />
-      </View>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>HbA1c (%)</Text>
-        <TextInput
-          style={[styles.input, { width: width * 0.9, maxWidth: 400 }]}
-          placeholder="e.g., 5.6"
-          placeholderTextColor={Colors.textLight}
-          value={formData.hba1c}
-          onChangeText={(text) => updateField('hba1c', text.replace(/[^0-9.]/g, ''))}
-          keyboardType="decimal-pad"
-        />
-      </View>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Cholesterol / HighChol</Text>
-        <TextInput
-          style={[styles.input, { width: width * 0.9, maxWidth: 400 }]}
-          placeholder="e.g., 190"
-          placeholderTextColor={Colors.textLight}
-          value={formData.cholesterol}
-          onChangeText={(text) => updateField('cholesterol', text.replace(/[^0-9.]/g, ''))}
-          keyboardType="decimal-pad"
-        />
-      </View>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Blood Pressure</Text>
-        <View style={styles.row}>
-          <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.sublabel}>Systolic</Text>
-            <TextInput
-              style={[styles.input, { width: '100%' }]}
-              placeholder="120"
-              placeholderTextColor={Colors.textLight}
-              value={formData.bloodPressureSystolic}
-              onChangeText={(text) => updateField('bloodPressureSystolic', text.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
-            />
-          </View>
-          <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-            <Text style={styles.sublabel}>Diastolic</Text>
-            <TextInput
-              style={[styles.input, { width: '100%' }]}
-              placeholder="80"
-              placeholderTextColor={Colors.textLight}
-              value={formData.bloodPressureDiastolic}
-              onChangeText={(text) => updateField('bloodPressureDiastolic', text.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
-            />
-          </View>
-        </View>
-        <Text style={styles.helperText}>Normal: &lt;120/80 mmHg. High BP increases diabetes risk.</Text>
-      </View>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Hypertension (Doctor-diagnosed)</Text>
+        <Text style={styles.label}>High Blood Pressure <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>Have you been told you have high blood pressure?</Text>
         <View style={styles.radioGroup}>
-          {['No', 'Yes'].map(option => (
+          {[
+            { value: '0', label: 'No' },
+            { value: '1', label: 'Yes' },
+          ].map((option) => (
             <TouchableOpacity
-              key={option}
-              style={[styles.radioButton, formData.hypertension === option && styles.radioButtonActive, { width: (width * 0.9 - 40) / 2, maxWidth: 140 }]}
-              onPress={() => updateField('hypertension', option)}
+              key={option.value}
+              style={[
+                styles.radioButton,
+                formData.highBP === option.value && styles.radioButtonActive,
+                { flex: 1 }
+              ]}
+              onPress={() => updateField('highBP', option.value)}
             >
-              <Text style={[styles.radioText, formData.hypertension === option && styles.radioTextActive]}>{option}</Text>
+              <Text
+                style={[
+                  styles.radioText,
+                  formData.highBP === option.value && styles.radioTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
       </View>
 
+      {/* High Cholesterol */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Heart Disease History</Text>
+        <Text style={styles.label}>High Cholesterol <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>Have you been told you have high cholesterol?</Text>
         <View style={styles.radioGroup}>
-          {['No', 'Yes'].map(option => (
+          {[
+            { value: '0', label: 'No' },
+            { value: '1', label: 'Yes' },
+          ].map((option) => (
             <TouchableOpacity
-              key={option}
-              style={[styles.radioButton, formData.heartDiseaseHistory === option && styles.radioButtonActive, { width: (width * 0.9 - 40) / 2, maxWidth: 140 }]}
-              onPress={() => updateField('heartDiseaseHistory', option)}
+              key={option.value}
+              style={[
+                styles.radioButton,
+                formData.highChol === option.value && styles.radioButtonActive,
+                { flex: 1 }
+              ]}
+              onPress={() => updateField('highChol', option.value)}
             >
-              <Text style={[styles.radioText, formData.heartDiseaseHistory === option && styles.radioTextActive]}>{option}</Text>
+              <Text
+                style={[
+                  styles.radioText,
+                  formData.highChol === option.value && styles.radioTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
       </View>
+
+      {/* General Health */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>General Health <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>How would you rate your general health?</Text>
+        <View style={styles.radioGroup}>
+          {[
+            { value: '1', label: 'Excellent' },
+            { value: '2', label: 'Very Good' },
+            { value: '3', label: 'Good' },
+            { value: '4', label: 'Fair' },
+            { value: '5', label: 'Poor' },
+          ].map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={[
+                styles.radioButton,
+                formData.genHlth === option.value && styles.radioButtonActive,
+              ]}
+              onPress={() => updateField('genHlth', option.value)}
+            >
+              <Text
+                style={[
+                  styles.radioText,
+                  formData.genHlth === option.value && styles.radioTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Heart Disease History */}
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Heart Disease History <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>
+          Ever been told you had coronary heart disease or heart attack?
+        </Text>
+        <View style={styles.radioGroup}>
+          {[
+            { value: '0', label: 'No' },
+            { value: '1', label: 'Yes' },
+          ].map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={[
+                styles.radioButton,
+                formData.heartDiseaseOrAttack === option.value && styles.radioButtonActive,
+                { flex: 1 }
+              ]}
+              onPress={() => updateField('heartDiseaseOrAttack', option.value)}
+            >
+              <Text
+                style={[
+                  styles.radioText,
+                  formData.heartDiseaseOrAttack === option.value && styles.radioTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* HbA1c Estimated (Auto-calculated) */}
+      {formData.hba1cEstimated && (
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Estimated HbA1c <Text style={styles.optional}>(Auto-calculated)</Text></Text>
+          <View style={[styles.input, { backgroundColor: Colors.primaryLight + '20', borderColor: Colors.primary }]}>
+            <Text style={{ fontSize: 16, color: Colors.text, fontWeight: '700' }}>
+              {parseFloat(formData.hba1cEstimated).toFixed(2)}%
+            </Text>
+          </View>
+          <Text style={styles.helperText}>
+            {parseFloat(formData.hba1cEstimated) < 5.7 ? 'Normal (< 5.7%)' :
+              parseFloat(formData.hba1cEstimated) < 6.5 ? 'Prediabetes (5.7-6.4%)' :
+                'Diabetes risk (≥ 6.5%)'}
+          </Text>
+        </View>
+      )}
+
+      {/* Blood Glucose Estimated (Auto-calculated) */}
+      {formData.bloodGlucoseEstimated && (
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Estimated Blood Glucose <Text style={styles.optional}>(Auto-calculated)</Text></Text>
+          <View style={[styles.input, { backgroundColor: Colors.primaryLight + '20', borderColor: Colors.primary }]}>
+            <Text style={{ fontSize: 16, color: Colors.text, fontWeight: '700' }}>
+              {parseFloat(formData.bloodGlucoseEstimated).toFixed(1)} mg/dL
+            </Text>
+          </View>
+          <Text style={styles.helperText}>
+            {parseFloat(formData.bloodGlucoseEstimated) < 100 ? 'Normal (< 100 mg/dL)' :
+              parseFloat(formData.bloodGlucoseEstimated) < 126 ? 'Prediabetes (100-125 mg/dL)' :
+                'Diabetes risk (≥ 126 mg/dL)'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 
-  const renderReview = () => (
-    <View style={styles.stepContent}>
-      <View style={styles.infoCard}>
-        <Info size={20} color={Colors.primary} />
-        <Text style={styles.infoText}>
-          Review the values below. You can go back to change anything before saving.
-        </Text>
-      </View>
+  const renderReview = () => {
+    const ageLabels: { [key: string]: string } = {
+      '1': '18-24', '2': '25-29', '3': '30-34', '4': '35-39',
+      '5': '40-44', '6': '45-49', '7': '50-54', '8': '55-59',
+      '9': '60-64', '10': '65-69', '11': '70-74', '12': '75-79', '13': '80+'
+    };
 
-      <View style={styles.featureCard}>
-        <Text style={styles.featureTitle}>Age</Text>
-        <Text style={styles.featureDescription}>{formData.age || '—'}</Text>
-      </View>
+    const genHlthLabels: { [key: string]: string } = {
+      '1': 'Excellent', '2': 'Very Good', '3': 'Good', '4': 'Fair', '5': 'Poor'
+    };
 
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>BMI</Text>
-        <Text style={styles.featureDescription}>{formData.bmi ? `${formData.bmi} kg/m²` : '—'}</Text>
-      </View>
+    return (
+      <View style={styles.stepContent}>
+        <View style={styles.infoCard}>
+          <Info size={20} color={Colors.primary} />
+          <Text style={styles.infoText}>
+            Review your information before submitting. All data is used for diabetes risk prediction.
+          </Text>
+        </View>
 
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>Blood Pressure</Text>
-        <Text style={styles.featureDescription}>
-          {formData.bloodPressureSystolic && formData.bloodPressureDiastolic
-            ? `${formData.bloodPressureSystolic}/${formData.bloodPressureDiastolic} mmHg`
-            : '—'}
-        </Text>
-      </View>
+        {/* Personal Info Summary */}
+        <View style={[styles.featureCard, { marginBottom: 16 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.featureTitle}>Personal Information</Text>
+            <Text style={styles.featureDescription}>
+              Age: {ageLabels[formData.age] || formData.age}
+            </Text>
+            <Text style={styles.featureDescription}>
+              Gender: {formData.sex === '0' ? 'Female' : 'Male'}
+            </Text>
+            <Text style={styles.featureDescription}>
+              BMI: {formData.bmi}
+            </Text>
+          </View>
+        </View>
 
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>Blood Glucose</Text>
-        <Text style={styles.featureDescription}>{formData.bloodGlucose || '—'}</Text>
-      </View>
+        {/* Lifestyle Summary */}
+        <View style={[styles.featureCard, { marginBottom: 16 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.featureTitle}>Lifestyle</Text>
+            <Text style={styles.featureDescription}>
+              Smoking History: {formData.smoker === '1' ? 'Yes' : 'No'}
+            </Text>
+            <Text style={styles.featureDescription}>
+              Physical Activity: {formData.physActivity === '1' ? 'Yes' : 'No'}
+            </Text>
+          </View>
+        </View>
 
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>HbA1c</Text>
-        <Text style={styles.featureDescription}>{formData.hba1c || '—'}</Text>
+        {/* Medical Summary */}
+        <View style={[styles.featureCard, { marginBottom: 16 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.featureTitle}>Medical Information</Text>
+            <Text style={styles.featureDescription}>
+              High Blood Pressure: {formData.highBP === '1' ? 'Yes' : 'No'}
+            </Text>
+            <Text style={styles.featureDescription}>
+              High Cholesterol: {formData.highChol === '1' ? 'Yes' : 'No'}
+            </Text>
+            <Text style={styles.featureDescription}>
+              General Health: {genHlthLabels[formData.genHlth] || formData.genHlth}
+            </Text>
+            <Text style={styles.featureDescription}>
+              Heart Disease History: {formData.heartDiseaseOrAttack === '1' ? 'Yes' : 'No'}
+            </Text>
+            {formData.hba1cEstimated && (
+              <Text style={styles.featureDescription}>
+                Estimated HbA1c: {parseFloat(formData.hba1cEstimated).toFixed(2)}%
+              </Text>
+            )}
+            {formData.bloodGlucoseEstimated && (
+              <Text style={styles.featureDescription}>
+                Estimated Blood Glucose: {parseFloat(formData.bloodGlucoseEstimated).toFixed(1)} mg/dL
+              </Text>
+            )}
+          </View>
+        </View>
       </View>
-
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>Cholesterol</Text>
-        <Text style={styles.featureDescription}>{formData.cholesterol || '—'}</Text>
-      </View>
-
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>Smoking</Text>
-        <Text style={styles.featureDescription}>{formData.smoking || '—'}</Text>
-      </View>
-
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>Physical Activity (min/week)</Text>
-        <Text style={styles.featureDescription}>{formData.physicalActivityMinutes || '—'}</Text>
-      </View>
-
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>Daily Steps</Text>
-        <Text style={styles.featureDescription}>{formData.dailySteps || '—'}</Text>
-      </View>
-
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>Hypertension</Text>
-        <Text style={styles.featureDescription}>{formData.hypertension || '—'}</Text>
-      </View>
-
-      <View style={[styles.featureCard, { marginTop: 12 }]}>
-        <Text style={styles.featureTitle}>Heart Disease History</Text>
-        <Text style={styles.featureDescription}>{formData.heartDiseaseHistory || '—'}</Text>
-      </View>
-    </View>
-  );
-
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 'features':
-        return renderFeatureOverview();
-      case 'personal':
-        return renderPersonalInfo();
-      case 'lifestyle':
-        return renderLifestyle();
-      case 'medical':
-        return renderMedical();
-      case 'review':
-        return renderReview();
-      default:
-        return null;
-    }
+    );
   };
+
+  /* --- Main render --- */
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerTop}>
-            {currentStepIndex > 0 ? (
-              <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                <Text style={styles.backText}>Back</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.backButton} />
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
+        <View style={styles.headerTop}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={handleBack}
+            disabled={currentStep === 'features'}
+          >
+            {currentStep !== 'features' && (
+              <Text style={styles.backText}>← Back</Text>
             )}
-            <Text style={styles.stepIndicator}>
-              Step {currentStepIndex + 1} of {steps.length}
-            </Text>
-          </View>
-
-          <View style={styles.progressBarContainer}>
-            <View style={[styles.progressBar, { width: `${progress}%` }]} />
-          </View>
-
-          <Text style={styles.stepTitle}>{steps[currentStepIndex].title}</Text>
-          <Text style={styles.stepDescription}>{steps[currentStepIndex].description}</Text>
+          </TouchableOpacity>
+          <Text style={styles.stepIndicator}>
+            Step {currentStepIndex + 1} of {steps.length}
+          </Text>
         </View>
 
-        {/* Content */}
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: Math.max(insets.bottom, 20) },
-          ]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {renderStepContent()}
-        </ScrollView>
+        <View style={styles.progressBarContainer}>
+          <View style={[styles.progressBar, { width: `${progress}%` }]} />
+        </View>
 
-        {/* Footer */}
-        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-          <View style={styles.buttonRow}>
-            {currentStepIndex > 0 && (
-              <TouchableOpacity
-                style={[styles.button, styles.buttonSecondary, { width: Math.min(width * 0.4, 180) }]}
-                onPress={handleBack}
-              >
-                <Text style={styles.buttonSecondaryText}>Previous</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.buttonPrimary,
-                {
-                  flex: currentStepIndex === 0 ? 1 : undefined,
-                  width:
-                    currentStepIndex > 0 && currentStepIndex < steps.length - 1
-                      ? Math.min(width * 0.5, 200)
-                      : currentStepIndex === steps.length - 1
-                      ? Math.min(width * 0.5, 200)
-                      : Math.min(width * 0.9, 400),
-                },
-                !validateStep(currentStep) && styles.buttonDisabled,
-              ]}
-              onPress={handleNext}
-              disabled={!validateStep(currentStep) || isLoading}
+        <Text style={styles.stepTitle}>{steps[currentStepIndex].title}</Text>
+        <Text style={styles.stepDescription}>{steps[currentStepIndex].description}</Text>
+      </View>
+
+      {/* Content */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {currentStep === 'features' && renderFeatureOverview()}
+        {currentStep === 'personal' && renderPersonalInfo()}
+        {currentStep === 'lifestyle' && renderLifestyle()}
+        {currentStep === 'medical' && renderMedical()}
+        {currentStep === 'review' && renderReview()}
+      </ScrollView>
+
+      {/* Footer */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={styles.buttonRow}>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              styles.buttonPrimary,
+              { flex: 1 },
+              (!validateStep(currentStep) || isLoading) && styles.buttonDisabled,
+            ]}
+            onPress={handleNext}
+            disabled={!validateStep(currentStep) || isLoading}
+          >
+            <LinearGradient
+              colors={[Colors.primary, Colors.primaryDark]}
+              style={styles.buttonGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
             >
-              <LinearGradient
-                colors={
-                  !validateStep(currentStep)
-                    ? [Colors.borderLight, Colors.borderLight]
-                    : (Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]])
-                }
-                style={styles.buttonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <Text style={styles.buttonPrimaryText}>
-                  {isLoading
-                    ? 'Saving...'
-                    : currentStepIndex === steps.length - 1
-                    ? 'Save & Continue'
-                    : 'Next'}
-                </Text>
-                {currentStepIndex < steps.length - 1 && (
-                  <ChevronRight size={20} color={Colors.textWhite} style={{ marginLeft: 8 }} />
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
+              <Text style={styles.buttonPrimaryText}>
+                {isLoading ? 'Saving...' : currentStep === 'review' ? 'Submit' : 'Continue'}
+              </Text>
+              {!isLoading && <ChevronRight size={20} color={Colors.textWhite} />}
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </View>
     </KeyboardAvoidingView>
