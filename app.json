@@ -9,22 +9,14 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "extra": {
-      "apiHost": "192.168.1.76",
-      "firebase": {
-        "apiKey": "AIzaSyBIXqGLcFUw9jW9xUPLFmdR82a2WKaqQ_o",
-        "authDomain": "sweettrack-d805d.firebaseapp.com",
-        "projectId": "sweettrack-d805d",
-        "storageBucket": "sweettrack-d805d.firebasestorage.app",
-        "messagingSenderId": "1045594987128",
-        "appId": "1:1045594987128:web:aecc3e857beb3b605c2b8d",
-        "measurementId": "G-J8J9HRXCGJ",
-        "webClientId": "1045594987128-mn0humduek4lam6eetgcq7bsl4oia28u.apps.googleusercontent.com"
-      }
+      "apiHost": "192.168.1.76"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sweettrack.fypsweettrack"
     },
     "android": {
+      "package": "com.sweettrack.fypsweettrack",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -32,7 +24,26 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "diabetesapp",
+              "host": "auth",
+              "pathPrefix": "/callback"
+            },
+            {
+              "scheme": "diabetesapp",
+              "host": "auth",
+              "pathPrefix": "/error"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "output": "static",
