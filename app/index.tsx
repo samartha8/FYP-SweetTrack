@@ -2,7 +2,7 @@ import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View, Text } from 'react-native';
 
 export default function IndexScreen() {
   const router = useRouter();
@@ -22,7 +22,7 @@ export default function IndexScreen() {
         }
         return;
       }
-      
+
       // Priority 2: Check onboarding only if no user is logged in
       if (!hasOnboarded) {
         // First time - show onboarding
@@ -37,6 +37,7 @@ export default function IndexScreen() {
   return (
     <View style={styles.container}>
       <ActivityIndicator size="large" color={Colors.primary} />
+      <Text style={{ marginTop: 20, color: Colors.textSecondary }}>Initializing...</Text>
     </View>
   );
 }
