@@ -1,35 +1,32 @@
 import { createContextHook } from '@/hooks/use-context-hook';
-import { auth } from '@/lib/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as AuthSession from 'expo-auth-session';
 import Constants from 'expo-constants';
-import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import * as WebBrowser from 'expo-web-browser';
-import { signOut as firebaseSignOut, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Platform } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 
 export type User = {
   id: string;
   name: string;
   email: string;
-  age?: number;
-  gender?: string;
-  height?: number;
-  weight?: number;
-  bmi?: number;
-  familyHistory?: string;
-  previousDiagnosis?: string;
-  currentMedication?: string;
-  physicalActivityDays?: number;
-  smoking?: string;
-  alcohol?: string;
-  fastingGlucose?: number;
-  bloodPressure?: { systolic: number; diastolic: number };
-  medicalHistory?: string[];
+  // Health data fields from health setup
+  age?: number; // Age category 1-13
+  sex?: number; // 0=Female, 1=Male
+  height?: number; // cm
+  weight?: number; // kg
+  bmi?: number; // Calculated BMI
+  highBP?: number; // 0=No, 1=Yes
+  highChol?: number; // 0=No, 1=Yes
+  genHlth?: number; // 1-5 (Excellent to Poor)
+  smoker?: number; // 0=No, 1=Yes
+  physActivity?: number; // 0=No, 1=Yes
+  heartDiseaseOrAttack?: number; // 0=No, 1=Yes
+  hba1cEstimated?: number; // Estimated HbA1c %
+  bloodGlucoseEstimated?: number; // Estimated blood glucose mg/dL
   healthSetupCompleted?: boolean;
   isGoogleFitConnected?: boolean;
+  medicalHistory?: string[];
 };
 
 export type HealthMetrics = {
@@ -95,64 +92,45 @@ const normalizeApiUrl = (url: string) => {
 };
 
 const getApiBaseUrl = () => {
-  // Highest priority: explicit env override (works for any port/host)
+  // Highest priority: explicit env override
   const envBase = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL;
   if (envBase) return normalizeApiUrl(envBase);
 
-  // Web: default to backend dev port unless explicitly proxied
+  // Web: use localhost
   if (Platform.OS === 'web') {
     return 'http://localhost:5000/api';
   }
 
-  // Native: allow host/port overrides via env; fall back to emulator-friendly defaults
-  const hostOverride = process.env.EXPO_PUBLIC_API_HOST || process.env.API_HOST;
-  const port = process.env.EXPO_PUBLIC_API_PORT || process.env.API_PORT || '5000';
+  // ✅ ANDROID EMULATOR: Must use 10.0.2.2
+  if (Platform.OS === 'android') {
+    // Check if running on emulator vs physical device
+    const isEmulator = Constants.deviceName?.includes('sdk') ||
+      Constants.deviceName?.includes('emulator') ||
+      !Constants.deviceName; // null deviceName often means emulator
 
-  let hostIP = hostOverride;
-  
-  if (!hostIP) {
-    // Try to extract IP from Expo dev server connection
-    // When connected via QR code, Expo provides the dev server URL
-    try {
-      const debuggerHost = Constants.expoConfig?.hostUri || Constants.expoConfig?.extra?.debuggerHost;
-      if (debuggerHost) {
-        // Extract IP from format like "192.168.1.76:8081" or "192.168.1.76"
-        const ipMatch = debuggerHost.match(/^([\d.]+)(?::\d+)?$/);
-        if (ipMatch && ipMatch[1]) {
-          hostIP = ipMatch[1];
-          if (__DEV__) {
-            console.log('✅ Auto-detected API host from Expo connection:', hostIP);
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore errors in IP detection
+    if (isEmulator) {
+      console.log('🤖 Android Emulator detected - Using 10.0.2.2');
+      return 'http://10.0.2.2:5000/api';
     }
-    
-    // Fallback: Android emulator uses 10.0.2.2, physical devices need LAN IP
-    if (!hostIP) {
-      // Try to use the IP from app.json if available (for physical devices)
-      const appJsonIP = Constants.expoConfig?.extra?.apiHost;
-      if (appJsonIP && appJsonIP !== 'auto-detect') {
-        hostIP = appJsonIP;
-        if (__DEV__) {
-          console.log('Using API host from app.json:', hostIP);
-        }
-      } else {
-        // Default fallback: Android emulator uses 10.0.2.2, iOS simulator uses localhost
-        hostIP = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
-        if (__DEV__) {
-          console.warn('⚠️ Using fallback IP:', hostIP, '- For physical devices, ensure phone and computer are on same Wi-Fi');
-        }
-      }
+
+    // Physical Android device - use network IP from app.json
+    const appJsonIP = Constants.expoConfig?.extra?.apiHost;
+    if (appJsonIP && appJsonIP !== 'auto-detect') {
+      console.log('📱 Android Physical Device - Using:', appJsonIP);
+      return `http://${appJsonIP}:5000/api`;
     }
   }
 
-  const apiUrl = `http://${hostIP}:${port}/api`;
-  if (__DEV__) {
-    console.log('🌐 API Base URL:', apiUrl);
+  // iOS Simulator: use localhost
+  if (Platform.OS === 'ios') {
+    console.log('🍎 iOS Simulator - Using localhost');
+    return 'http://localhost:5000/api';
   }
-  return apiUrl;
+
+  // Fallback for physical devices
+  const appJsonIP = Constants.expoConfig?.extra?.apiHost || '192.168.1.76';
+  console.log('📱 Physical Device Fallback - Using:', appJsonIP);
+  return `http://${appJsonIP}:5000/api`;
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -171,26 +149,35 @@ export const [UserProvider, useUser] = createContextHook(() => {
   const [streak, setStreak] = useState<number>(0);
   const [isGoogleFitConnected, setIsGoogleFitConnected] = useState<boolean>(false);
 
-  const persistAuthPayload = useCallback(async (nextUser: User, accessToken: string, refreshToken: string) => {
+  const persistAuthPayload = useCallback(async (nextUser: User & { healthData?: any }, accessToken: string, refreshToken: string) => {
+    // Flatten healthData if present (from backend)
+    let userToSave = { ...nextUser };
+    if (nextUser.healthData) {
+      const { _id, user: _u, __v, createdAt, updatedAt, ...healthFields } = nextUser.healthData;
+      userToSave = { ...userToSave, ...healthFields };
+      // Remove the nested healthData object to keep state clean
+      delete userToSave.healthData;
+    }
+
     // IMPORTANT: Set state synchronously BEFORE async storage operations
     // This ensures state is updated immediately to prevent navigation issues
-    setUser(nextUser);
-    setHasHealthSetup(nextUser.healthSetupCompleted || false);
-    setIsGoogleFitConnected(nextUser.isGoogleFitConnected || false);
+    setUser(userToSave);
+    setHasHealthSetup(userToSave.healthSetupCompleted || false);
+    setIsGoogleFitConnected(userToSave.isGoogleFitConnected || false);
     // Mark onboarding as completed for authenticated users (they've seen the login screen)
     setHasOnboarded(true);
 
     // Store in AsyncStorage (async, but state is already set above)
     await AsyncStorage.multiSet([
-      [STORAGE_KEYS.USER, JSON.stringify(nextUser)],
+      [STORAGE_KEYS.USER, JSON.stringify(userToSave)],
       [STORAGE_KEYS.TOKEN, accessToken],
       [STORAGE_KEYS.REFRESH_TOKEN, refreshToken],
       [STORAGE_KEYS.HAS_ONBOARDED, 'true'], // Mark onboarding as complete
-      [STORAGE_KEYS.HAS_HEALTH_SETUP, nextUser.healthSetupCompleted ? 'true' : 'false'], // Store health setup status
+      [STORAGE_KEYS.HAS_HEALTH_SETUP, userToSave.healthSetupCompleted ? 'true' : 'false'], // Store health setup status
     ]);
-    
+
     if (__DEV__) {
-      console.log('✅ Auth payload persisted. User:', nextUser.email, 'Onboarded: true', 'HealthSetup:', nextUser.healthSetupCompleted);
+      console.log('✅ Auth payload persisted. User:', userToSave.email, 'Onboarded: true', 'HealthSetup:', userToSave.healthSetupCompleted);
     }
   }, []);
 
@@ -220,32 +207,37 @@ export const [UserProvider, useUser] = createContextHook(() => {
     }
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 sec timeout
+
       const res = await fetch(`${AUTH_URL}/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        // Check if it's a signature error - means token was signed with different JWT_SECRET
-        if (data.errorCode === 'INVALID_SIGNATURE') {
-          console.warn('Token signature invalid - clearing all tokens. User must login again.');
+        // Only clear state if explicitly unauthorized or invalid token
+        if (res.status === 401 || res.status === 403 || data.errorCode === 'INVALID_REFRESH_TOKEN' || data.errorCode === 'INVALID_SIGNATURE') {
+          console.warn('Session expired or invalid - clearing state.');
           await clearLocalState();
-          return { success: false, message: 'Session invalid. Please login again.', errorCode: 'INVALID_SIGNATURE' };
+          return { success: false, message: 'Session expired. Please login again.', errorCode: data.errorCode || 'INVALID_TOKEN' };
         }
-        
-        // Other errors - clear tokens and require re-login
-        await clearLocalState();
-        return { success: false, message: data.message || 'Unable to refresh session' };
+
+        // For other errors (500s, etc), keep local state but return failure
+        console.warn('Refresh failed but session might still be valid locally:', data.message);
+        return { success: false, message: data.message || 'Unable to refresh session', errorCode: undefined };
       }
 
       await persistAuthPayload(data.user, data.token, data.refreshToken);
-      return { success: true, token: data.token };
+      return { success: true, token: data.token, errorCode: undefined };
     } catch (error) {
       console.error('Error refreshing session:', error);
-      await clearLocalState();
-      return { success: false, message: 'Unable to refresh session' };
+      // DO NOT clear local state on network error/timeout
+      return { success: false, message: 'Network error. Offline mode.', errorCode: 'NETWORK_ERROR' };
     }
   }, [clearLocalState, persistAuthPayload]);
 
@@ -273,7 +265,12 @@ export const [UserProvider, useUser] = createContextHook(() => {
         AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN),
       ]);
 
-      if (storedOnboarded) setHasOnboarded(JSON.parse(storedOnboarded));
+      // Default hasOnboarded to false if not found
+      if (storedOnboarded) {
+        setHasOnboarded(JSON.parse(storedOnboarded));
+      } else {
+        setHasOnboarded(false);
+      }
       if (storedHealthSetup) setHasHealthSetup(JSON.parse(storedHealthSetup));
       if (storedMetrics) setHealthMetrics(JSON.parse(storedMetrics));
       if (storedGoals) setDailyGoals(JSON.parse(storedGoals));
@@ -308,7 +305,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
     } finally {
       setIsLoading(false);
     }
-  }, [refreshSession]);
+  }, [refreshSession, clearLocalState]);
 
   useEffect(() => {
     loadUserData();
@@ -408,310 +405,117 @@ export const [UserProvider, useUser] = createContextHook(() => {
   // --- GOOGLE SIGN-IN ---
   const signInWithGoogle = useCallback(async () => {
     try {
-      // Configure Google OAuth
-      const firebaseConfig = Constants.expoConfig?.extra?.firebase;
-      if (!firebaseConfig) {
-        return { 
-          success: false, 
-          message: 'Firebase not configured. Please add Firebase config to app.json' 
-        };
-      }
+      await clearLocalState(); // Clear any existing session
 
-      // Get OAuth client IDs
-      const webClientId = firebaseConfig.webClientId || firebaseConfig.iosClientId;
-      if (!webClientId) {
-        return { 
-          success: false, 
-          message: 'Google OAuth client ID not found. Please add webClientId to Firebase config in app.json' 
-        };
-      }
-
-      WebBrowser.maybeCompleteAuthSession();
-
-      // Configure OAuth request with proper redirect URI
-      let redirectUri: string;
-      
-      if (Platform.OS === 'web') {
-        // For web, use the current origin or localhost
-        redirectUri = AuthSession.makeRedirectUri({
-          useProxy: false,
-        } as any);
-      } else {
-        // For native, use the app scheme or Expo proxy
-        redirectUri = AuthSession.makeRedirectUri({
-          useProxy: true,
-          scheme: 'diabetesapp', // Use your app scheme from app.json
-        } as any);
-      }
-
-      // Log the redirect URI for debugging (user needs to add this to Google Cloud Console)
-      if (__DEV__) {
-        console.log('🔗 Google OAuth Redirect URI:', redirectUri);
-        console.log('⚠️ Make sure this URI is added to your Google Cloud Console OAuth client');
-      }
-
-      // Generate a secure nonce for ID token requests (required by Google for security)
-      // The nonce prevents replay attacks and must be included when requesting ID tokens
-      // Google expects a random string (not hashed) that will be returned in the ID token
-      const randomBytes = await Crypto.getRandomBytesAsync(32);
-      const nonce = Array.from(randomBytes)
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
+      // Step 1: Construct Google OAuth URL
+      const googleAuthUrl = `${AUTH_URL}/google`;
 
       if (__DEV__) {
-        console.log('🔐 Generated nonce for OAuth request:', nonce.substring(0, 16) + '...');
+        console.log('🔐 Opening Google Sign-In:', googleAuthUrl);
       }
 
-      // Manually construct the authorization URL with nonce parameter
-      // expo-auth-session doesn't always include nonce in the URL for ID token requests
-      const scopeString = ['openid', 'profile', 'email'].join(' ');
-      const state = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        `${Date.now()}-${Math.random()}`
-      );
-      
-      const authUrlParams = new URLSearchParams({
-        client_id: webClientId,
-        redirect_uri: redirectUri,
-        response_type: 'id_token',
-        scope: scopeString,
-        nonce: nonce, // CRITICAL: Must be included for ID token requests
-        state: state,
-      });
-
-      const authorizationUrl = `https://accounts.google.com/o/oauth2/v2/auth?${authUrlParams.toString()}`;
-
-      if (__DEV__) {
-        console.log('✅ Authorization URL with nonce:', authorizationUrl.substring(0, 150) + '...');
-        console.log('✅ Nonce parameter included:', authorizationUrl.includes('nonce='));
-      }
-
-      // For web, manually open the authorization URL with nonce included
-      if (Platform.OS === 'web') {
-        // Use WebBrowser to open the manually constructed URL with nonce
-        const result = await WebBrowser.openAuthSessionAsync(
-          authorizationUrl,
-          redirectUri
-        );
-
-        if (result.type !== 'success') {
-          if (result.type === 'cancel') {
-            return { success: false, message: 'Sign-in cancelled' };
-          }
-          return { success: false, message: 'Google Sign-In failed' };
-        }
-
-        // Parse the redirect URL to extract the ID token
-        // For ID token flow, Google returns the token in the URL fragment (hash)
-        const redirectUrl = result.url;
-        let id_token: string | null = null;
-        
-        try {
-          const urlObj = new URL(redirectUrl);
-          // ID tokens are returned in the hash fragment for security
-          if (urlObj.hash) {
-            const hashParams = new URLSearchParams(urlObj.hash.substring(1));
-            id_token = hashParams.get('id_token');
-          }
-          // Fallback to query params (shouldn't happen for ID token flow, but just in case)
-          if (!id_token) {
-            id_token = urlObj.searchParams.get('id_token');
-          }
-        } catch (e) {
-          console.error('Error parsing redirect URL:', e);
-          return { success: false, message: 'Invalid redirect URL received' };
-        }
-        
-        if (!id_token) {
-          return { success: false, message: 'No ID token received from Google' };
-        }
-
-        // Create Firebase credential with the ID token
-        const credential = GoogleAuthProvider.credential(id_token);
-        const firebaseResult = await signInWithCredential(auth, credential);
-        const firebaseUser = firebaseResult.user;
-        
-        if (!firebaseUser.email) {
-          await firebaseSignOut(auth);
-          return { success: false, message: 'No email found in Google account' };
-        }
-        
-        // Get ID token to send to backend
-        const idToken = await firebaseUser.getIdToken();
-        
-        // Send to backend to create/update user in database
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
-        try {
-          const res = await fetch(`${AUTH_URL}/google-signin`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              idToken,
-              email: firebaseUser.email,
-              name: firebaseUser.displayName || firebaseUser.email.split('@')[0],
-              photoURL: firebaseUser.photoURL || null,
-            }),
-            signal: controller.signal,
-          });
-          clearTimeout(timeoutId);
-          
-          const data = await res.json();
-          
-          if (!res.ok || !data.success) {
-            // Sign out from Firebase if backend fails
-            await firebaseSignOut(auth);
-            return { 
-              success: false, 
-              message: data.message || 'Failed to create/update user account' 
-            };
-          }
-          
-          // Successfully stored user in database - persist auth data
-          await persistAuthPayload(data.user, data.token, data.refreshToken);
-          
-          if (__DEV__) {
-            console.log('✅ Google Sign-In successful. User stored in database:', data.user.email);
-            console.log('✅ Health setup status:', data.user.healthSetupCompleted);
-          }
-          
-          // Return user data so caller can check health setup status
-          return { 
-            success: true, 
-            user: data.user,
-            needsHealthSetup: !data.user.healthSetupCompleted
-          };
-        } catch (fetchError: any) {
-          clearTimeout(timeoutId);
-          await firebaseSignOut(auth);
-          
-          if (fetchError.name === 'AbortError') {
-            return { success: false, message: 'Request timed out. Please check your connection.' };
-          }
-          
-          return { 
-            success: false, 
-            message: fetchError.message || 'Failed to connect to server' 
-          };
-        }
-      }
-
-      // For native (iOS/Android), use WebBrowser with manually constructed URL
+      // Step 2: Open OAuth flow in system browser
       const result = await WebBrowser.openAuthSessionAsync(
-        authorizationUrl,
-        redirectUri
+        googleAuthUrl,
+        'diabetesapp://auth/callback'
       );
-      
+
+      if (result.type === 'cancel') {
+        if (__DEV__) {
+          console.log('ℹ️  User cancelled Google Sign-In');
+        }
+        return { success: false, message: 'Sign-in cancelled' };
+      }
+
       if (result.type !== 'success') {
-        if (result.type === 'cancel') {
-          return { success: false, message: 'Sign-in cancelled' };
-        }
-        return { success: false, message: 'Google Sign-In failed' };
+        console.error('❌ Google Sign-In failed:', result);
+        return { success: false, message: 'Google Sign-In failed. Please try again.' };
       }
 
-      // Parse the redirect URL to extract the ID token
-      // For ID token flow, Google returns the token in the URL fragment (hash)
-      const redirectUrl = result.url;
-      let id_token: string | null = null;
-      
-      try {
-        const urlObj = new URL(redirectUrl);
-        // ID tokens are returned in the hash fragment for security
-        if (urlObj.hash) {
-          const hashParams = new URLSearchParams(urlObj.hash.substring(1));
-          id_token = hashParams.get('id_token');
-        }
-        // Fallback to query params (shouldn't happen for ID token flow, but just in case)
-        if (!id_token) {
-          id_token = urlObj.searchParams.get('id_token');
-        }
-      } catch (e) {
-        console.error('Error parsing redirect URL:', e);
-        return { success: false, message: 'Invalid redirect URL received' };
-      }
-      
-      if (!id_token) {
-        return { success: false, message: 'No ID token received from Google' };
+      // Step 3: Extract tokens from callback URL
+      // Format: diabetesapp://auth/callback?token=xxx&refreshToken=yyy&needsHealthSetup=true
+      const url = result.url;
+      if (__DEV__) {
+        console.log('📱 Received callback from Google OAuth');
       }
 
-      // Create Firebase credential with the ID token
-      const credential = GoogleAuthProvider.credential(id_token);
-      const firebaseResult = await signInWithCredential(auth, credential);
-      const firebaseUser = firebaseResult.user;
-      
-      if (!firebaseUser.email) {
-        await firebaseSignOut(auth);
-        return { success: false, message: 'No email found in Google account' };
+      const queryStart = url.indexOf('?');
+      if (queryStart === -1) {
+        console.error('❌ No query parameters in callback URL');
+        return { success: false, message: 'Invalid callback URL' };
       }
-      
-      // Get ID token to send to backend
-      const idToken = await firebaseUser.getIdToken();
-      
-      // Send to backend to create/update user in database
+
+      const params = new URLSearchParams(url.substring(queryStart + 1));
+
+      const token = params.get('token');
+      const refreshToken = params.get('refreshToken');
+      const needsHealthSetup = params.get('needsHealthSetup') === 'true';
+
+      if (!token || !refreshToken) {
+        console.error('❌ Missing tokens in callback URL');
+        return { success: false, message: 'Authentication tokens not received' };
+      }
+
+      if (__DEV__) {
+        console.log('✅ Tokens received successfully');
+      }
+
+      // Step 4: Get user data with the token
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
       try {
-        const res = await fetch(`${AUTH_URL}/google-signin`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            idToken,
-            email: firebaseUser.email,
-            name: firebaseUser.displayName || firebaseUser.email.split('@')[0],
-            photoURL: firebaseUser.photoURL || null,
-          }),
-          signal: controller.signal,
+        const userRes = await fetch(`${AUTH_URL}/me`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          signal: controller.signal
         });
         clearTimeout(timeoutId);
-        
-        const data = await res.json();
-        
-        if (!res.ok || !data.success) {
-          // Sign out from Firebase if backend fails
-          await firebaseSignOut(auth);
-          return { 
-            success: false, 
-            message: data.message || 'Failed to create/update user account' 
-          };
+
+        if (!userRes.ok) {
+          console.error('❌ Failed to fetch user data:', userRes.status);
+          return { success: false, message: 'Failed to fetch user data' };
         }
-        
-        // Successfully stored user in database - persist auth data
-        await persistAuthPayload(data.user, data.token, data.refreshToken);
-        
+
+        const userData = await userRes.json();
+
+        if (!userData.success || !userData.user) {
+          console.error('❌ Invalid user data received');
+          return { success: false, message: 'Invalid user data' };
+        }
+
+        // Step 5: Save auth data to local storage
+        await persistAuthPayload(userData.user, token, refreshToken);
+
         if (__DEV__) {
-          console.log('✅ Google Sign-In successful. User stored in database:', data.user.email);
-          console.log('✅ Health setup status:', data.user.healthSetupCompleted);
+          console.log('✅ Google Sign-In successful:', userData.user.email);
+          console.log('   - Needs health setup:', needsHealthSetup);
         }
-        
-        // Return user data so caller can check health setup status
-        return { 
-          success: true, 
-          user: data.user,
-          needsHealthSetup: !data.user.healthSetupCompleted
+
+        return {
+          success: true,
+          user: userData.user,
+          needsHealthSetup
         };
+
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
-        await firebaseSignOut(auth);
-        
         if (fetchError.name === 'AbortError') {
-          return { success: false, message: 'Request timed out. Please check your connection.' };
+          return { success: false, message: 'Request timed out. Please try again.' };
         }
-        
-        return { 
-          success: false, 
-          message: fetchError.message || 'Failed to connect to server' 
-        };
+        throw fetchError;
       }
+
     } catch (error: any) {
-      console.error('Google Sign-In error:', error);
-      if (error.name === 'AbortError') {
-        return { success: false, message: 'Request timed out. Please try again.' };
-      }
-      return { success: false, message: error.message || 'Google Sign-In failed' };
+      console.error('❌ Google Sign-In error:', error);
+      return {
+        success: false,
+        message: error.message || 'Google Sign-In failed. Please try again.'
+      };
     }
-  }, [persistAuthPayload]);
+  }, [clearLocalState, persistAuthPayload]);
 
   // --- LOGOUT ---
   const logout = useCallback(async () => {
@@ -740,7 +544,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
   const ensureAccessToken = useCallback(async () => {
     // First, try to get the current token
     const currentToken = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
-    
+
     // If no token, try to refresh
     if (!currentToken) {
       const refreshed = await refreshSession();
@@ -751,19 +555,12 @@ export const [UserProvider, useUser] = createContextHook(() => {
       return null;
     }
 
-    // Token exists - try to refresh it to ensure it's still valid
-    const refreshed = await refreshSession();
-    if (refreshed.success) {
-      return await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
-    }
-
-    // If refresh failed due to signature error, tokens are already cleared
-    if (refreshed.errorCode === 'INVALID_SIGNATURE') {
-      return null;
-    }
-
-    // For other errors, return null (tokens already cleared by refreshSession)
-    return null;
+    // Token exists - return it immediately.
+    // We TRUST that if it's expired, the API call using it will fail (401),
+    // and the specific component can handle the logout or retry if needed.
+    // Automatically refreshing here causes an infinite loop because:
+    // refresh -> setUser -> Component Re-render -> ensureAccessToken -> refresh...
+    return currentToken;
   }, [refreshSession]);
 
   // --- REST FUNCTIONS REMAIN UNCHANGED ---
@@ -1050,46 +847,119 @@ export const [UserProvider, useUser] = createContextHook(() => {
     }
   }, [ensureAccessToken, updateHealthMetrics, clearLocalState]);
 
-  // Handle Google Fit OAuth callback deep link
+  // Handle OAuth callbacks and Google Fit deep links
   useEffect(() => {
     const handleDeepLink = async (url: string) => {
-      if (!url || !url.includes('google-fit-connected')) return;
+      if (__DEV__) {
+        console.log('🔗 Deep link received:', url);
+      }
 
-      try {
-        // Parse URL manually for React Native compatibility
-        const urlParts = url.split('?');
-        const queryString = urlParts[1] || '';
-        const params = new URLSearchParams(queryString);
-        const success = params.get('success');
-        const error = params.get('error');
-
-        if (success === 'true') {
-          // Connection successful - update status and sync data
-          setIsGoogleFitConnected(true);
-          await AsyncStorage.setItem(STORAGE_KEYS.GOOGLE_FIT_CONNECTED, JSON.stringify(true));
-          
-          if (user) {
-            setUser({ ...user, isGoogleFitConnected: true });
+      // Handle auth callbacks (Google Sign-In)
+      if (url.includes('diabetesapp://auth/')) {
+        // Handle errors
+        if (url.includes('diabetesapp://auth/error')) {
+          const queryStart = url.indexOf('?');
+          if (queryStart !== -1) {
+            const params = new URLSearchParams(url.substring(queryStart + 1));
+            const message = params.get('message') || 'Authentication failed';
+            console.error('❌ Auth error from deep link:', message);
           }
-
-          // Sync data immediately after connection
-          await syncGoogleFitData();
-        } else if (success === 'false') {
-          // Connection failed
-          const errorMessage = error ? decodeURIComponent(error) : 'Google Fit connection failed';
-          console.error('Google Fit connection error:', errorMessage);
+          return;
         }
-      } catch (err) {
-        console.error('Error handling Google Fit deep link:', err);
+
+        // Handle successful callback
+        if (url.includes('diabetesapp://auth/callback')) {
+          try {
+            const queryStart = url.indexOf('?');
+            if (queryStart === -1) {
+              console.error('❌ No query parameters in deep link');
+              return;
+            }
+
+            const params = new URLSearchParams(url.substring(queryStart + 1));
+
+            const token = params.get('token');
+            const refreshToken = params.get('refreshToken');
+
+            if (!token || !refreshToken) {
+              console.error('❌ Missing tokens in deep link');
+              return;
+            }
+
+            if (__DEV__) {
+              console.log('✅ Tokens found in deep link, fetching user data...');
+            }
+
+            // Get user data
+            const userRes = await fetch(`${AUTH_URL}/me`, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (!userRes.ok) {
+              console.error('❌ Failed to fetch user after deep link');
+              return;
+            }
+
+            const userData = await userRes.json();
+
+            if (!userData.success || !userData.user) {
+              console.error('❌ Invalid user data in deep link');
+              return;
+            }
+
+            // Save auth data
+            await persistAuthPayload(userData.user, token, refreshToken);
+
+            if (__DEV__) {
+              console.log('✅ Deep link auth successful:', userData.user.email);
+            }
+          } catch (error) {
+            console.error('❌ Deep link handling error:', error);
+          }
+        }
+        return; // Exit after handling auth callback
+      }
+
+      // Handle Google Fit callbacks
+      if (url.includes('google-fit-connected')) {
+        try {
+          const urlParts = url.split('?');
+          const queryString = urlParts[1] || '';
+          const params = new URLSearchParams(queryString);
+          const success = params.get('success');
+          const error = params.get('error');
+
+          if (success === 'true') {
+            // Connection successful - update status and sync data
+            setIsGoogleFitConnected(true);
+            await AsyncStorage.setItem(STORAGE_KEYS.GOOGLE_FIT_CONNECTED, JSON.stringify(true));
+
+            if (user) {
+              setUser({ ...user, isGoogleFitConnected: true });
+            }
+
+            // Sync data immediately after connection
+            await syncGoogleFitData();
+          } else if (success === 'false') {
+            // Connection failed
+            const errorMessage = error ? decodeURIComponent(error) : 'Google Fit connection failed';
+            console.error('Google Fit connection error:', errorMessage);
+          }
+        } catch (err) {
+          console.error('Error handling Google Fit deep link:', err);
+        }
       }
     };
 
-    // Handle deep link when app is already open
+    // Listen for deep links when app is open
     const subscription = Linking.addEventListener('url', (event) => {
       handleDeepLink(event.url);
     });
 
-    // Handle deep link when app is opened from closed state
+    // Check if app was opened from deep link
     Linking.getInitialURL().then((url) => {
       if (url) {
         handleDeepLink(url);
@@ -1099,7 +969,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
     return () => {
       subscription.remove();
     };
-  }, [user, syncGoogleFitData]);
+  }, [user, syncGoogleFitData, persistAuthPayload]);
 
   return useMemo(() => ({
     user,
