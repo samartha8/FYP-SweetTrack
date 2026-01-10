@@ -20,6 +20,7 @@ function RootLayoutNav() {
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="signup" options={{ headerShown: false }} />
+      <Stack.Screen name="ehr-upload" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
@@ -40,15 +41,15 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <SettingsProvider>
-          <AdminProvider>
-            <UserProvider>
+        <UserProvider>
+          <SettingsProvider>
+            <AdminProvider>
               <MealTrackingProvider>
                 <RootLayoutNav />
               </MealTrackingProvider>
-            </UserProvider>
-          </AdminProvider>
-        </SettingsProvider>
+            </AdminProvider>
+          </SettingsProvider>
+        </UserProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
