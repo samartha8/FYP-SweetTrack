@@ -1,6 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useUser } from './UserContext';
 
 export type Language = 'en' | 'ne' | 'hi';
 
@@ -43,38 +44,74 @@ const DEFAULT_SETTINGS: Settings = {
 export const [SettingsProvider, useSettings] = createContextHook(() => {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const { ensureAccessToken } = useUser();
 
-  useEffect(() => {
-    loadSettings();
+  const API_URL = useMemo(() => {
+    return process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5000';
   }, []);
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
-      const storedSettings = await AsyncStorage.getItem(STORAGE_KEY);
-      if (storedSettings) {
-        setSettings(JSON.parse(storedSettings));
+      // 1. Load from Local Cache first (Fast UI)
+      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        setSettings(JSON.parse(stored));
+      }
+
+      // 2. Load from Backend (Source of Truth)
+      const token = await ensureAccessToken();
+      if (token) {
+        const response = await fetch(`${API_URL}/api/settings`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const json = await response.json();
+        if (json.success && json.settings) {
+          const remoteSettings = json.settings;
+          // Merge to avoid losing local-only fields if any
+          const merged = { ...DEFAULT_SETTINGS, ...remoteSettings };
+          setSettings(merged);
+          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        }
       }
     } catch (error) {
       console.error('Error loading settings:', error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [ensureAccessToken, API_URL]);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
 
   const updateSettings = useCallback(async (updates: Partial<Settings>) => {
     const newSettings = { ...settings, ...updates };
+    setSettings(newSettings); // Optimistic UI
+
     try {
+      // Save Local
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
-      setSettings(newSettings);
+
+      // Save Backend
+      const token = await ensureAccessToken();
+      if (token) {
+        await fetch(`${API_URL}/api/settings`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(updates)
+        });
+      }
     } catch (error) {
       console.error('Error updating settings:', error);
     }
-  }, [settings]);
+  }, [settings, ensureAccessToken, API_URL]);
 
   const toggleHighContrast = useCallback(async () => {
-    const newSettings = { ...settings, highContrast: !settings.highContrast };
-    await updateSettings(newSettings);
-  }, [settings, updateSettings]);
+    await updateSettings({ highContrast: !settings.highContrast });
+  }, [settings.highContrast, updateSettings]);
 
   const setLanguage = useCallback(async (language: Language) => {
     await updateSettings({ language });
@@ -96,12 +133,20 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
 
   const resetSettings = useCallback(async () => {
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_SETTINGS));
       setSettings(DEFAULT_SETTINGS);
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_SETTINGS));
+
+      const token = await ensureAccessToken();
+      if (token) {
+        await fetch(`${API_URL}/api/settings/reset`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      }
     } catch (error) {
       console.error('Error resetting settings:', error);
     }
-  }, []);
+  }, [ensureAccessToken, API_URL]);
 
   return useMemo(() => ({
     settings,
