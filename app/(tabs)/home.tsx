@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ColorValue } from 'react-native';
+import { useState, useEffect } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Heart, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCrossed, Camera, BarChart3, List, Link } from 'lucide-react-native';
@@ -12,11 +13,36 @@ const CARD_WIDTH = (width - 60) / 2;
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, healthMetrics, dailyGoals, rewardsPoints, streak, isGoogleFitConnected, connectGoogleFit } = useUser();
+  const { user, healthMetrics, dailyGoals, rewardsPoints, streak, isGoogleFitConnected, connectGoogleFit, ensureAccessToken } = useUser();
+  const [predictionData, setPredictionData] = useState({ riskScore: 0, riskLevel: 'Low', hasHistory: false });
 
-  const riskScore = 35;
-  const riskLevel = 'Low' as const;
-  const riskColor = Colors.risk.low;
+  useEffect(() => {
+    const fetchPrediction = async () => {
+      try {
+        if (!user) return;
+        const token = await ensureAccessToken();
+        // Adjust URL for your environment (emulator vs device)
+        const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5000';
+        const response = await fetch(`${API_URL}/api/diabetes/latest`, {
+          headers: { 'Authorization': `Bearer ${token || ''}` }
+        });
+        const json = await response.json();
+        if (json.success && json.hasHistory) {
+          setPredictionData({
+            riskScore: json.riskScore,
+            riskLevel: json.riskLevel,
+            hasHistory: true
+          });
+        }
+      } catch (e) {
+        console.log('Failed to fetch prediction preview', e);
+      }
+    };
+    fetchPrediction();
+  }, [user]);
+
+  const { riskScore, riskLevel } = predictionData;
+  const riskColor = riskLevel === 'High' ? Colors.risk.high : riskLevel === 'Moderate' ? Colors.risk.moderate : Colors.risk.low;
 
   const quickStats = [
     { icon: Activity, label: 'Steps', value: healthMetrics.steps, goal: dailyGoals.steps, unit: '', color: Colors.chart.bmi },
