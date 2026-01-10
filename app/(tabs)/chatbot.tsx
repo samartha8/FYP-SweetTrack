@@ -11,8 +11,54 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send, Bot, User as UserIcon } from 'lucide-react-native';
+import Constants from 'expo-constants';
 import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
+
+// Get API base URL for dynamic platform detection
+const getApiBaseUrl = () => {
+  // Highest priority: explicit env override
+  const envBase = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL;
+  if (envBase) return envBase.replace(/\/$/, '').replace(/\/api$/, '') + '/api';
+
+  // Web: use localhost
+  if (Platform.OS === 'web') {
+    return 'http://localhost:5000/api';
+  }
+
+  // ✅ ANDROID EMULATOR: Must use 10.0.2.2
+  if (Platform.OS === 'android') {
+    // Check if running on emulator vs physical device
+    const isEmulator = Constants.deviceName?.includes('sdk') ||
+                      Constants.deviceName?.includes('emulator') ||
+                      !Constants.deviceName; // null deviceName often means emulator
+
+    if (isEmulator) {
+      console.log('🤖 Android Emulator detected - Using 10.0.2.2');
+      return 'http://10.0.2.2:5000/api';
+    }
+
+    // Physical Android device - use network IP from app.json
+    const appJsonIP = Constants.expoConfig?.extra?.apiHost;
+    if (appJsonIP && appJsonIP !== 'auto-detect') {
+      console.log('📱 Android Physical Device - Using:', appJsonIP);
+      return `http://${appJsonIP}:5000/api`;
+    }
+  }
+
+  // iOS Simulator: use localhost
+  if (Platform.OS === 'ios') {
+    console.log('🍎 iOS Simulator - Using localhost');
+    return 'http://localhost:5000/api';
+  }
+
+  // Fallback for physical devices
+  const appJsonIP = Constants.expoConfig?.extra?.apiHost || '192.168.1.76';
+  console.log('📱 Physical Device Fallback - Using:', appJsonIP);
+  return `http://${appJsonIP}:5000/api`;
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 type Message = {
   id: string;
@@ -170,7 +216,7 @@ export default function ChatbotScreen() {
                   message.sender === 'user' && styles.userMessageSender,
                 ]}
               >
-                {message.sender === 'bot' ? 'Chori' : 'You'}
+                {message.sender === 'bot' ? 'SweetTrack' : 'You'}
               </Text>
             </View>
             <Text
@@ -197,7 +243,7 @@ export default function ChatbotScreen() {
 
         {isTyping && (
           <Text style={{ marginLeft: 20, color: Colors.textLight }}>
-            Chori is typing...
+            SweetTrack AI is typing...
           </Text>
         )}
       </ScrollView>
