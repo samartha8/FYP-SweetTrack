@@ -2,8 +2,10 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ColorValue } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Award, Trophy, Star, Gift, Zap, Target, TrendingUp, Heart } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
+import { useTheme } from '@/contexts/SettingsContext';
+import { useTranslation } from '@/hooks/use-translation';
+import { useMemo } from 'react';
 
 type Badge = {
   id: string;
@@ -13,81 +15,114 @@ type Badge = {
   color: string;
   gradient: readonly string[];
   unlocked: boolean;
+  unlockedGradient: readonly string[];
 };
 
 export default function RewardsScreen() {
   const insets = useSafeAreaInsets();
   const { rewardsPoints, streak } = useUser();
+  const { colors, scale } = useTheme();
+  const { t } = useTranslation();
 
-  const badges: Badge[] = [
+  // Dynamic Styles
+  const themed = useMemo(() => ({
+    container: { backgroundColor: colors.backgroundSecondary },
+    header: { backgroundColor: colors.background },
+    headerTitle: { color: colors.text, fontSize: scale(28) },
+    headerSubtitle: { color: colors.textSecondary, fontSize: scale(14) },
+    statsValue: { color: colors.textWhite, fontSize: scale(28) },
+    statsLabel: { color: colors.textWhite, fontSize: scale(14) },
+    sectionTitle: { color: colors.text, fontSize: scale(20) },
+    card: { backgroundColor: colors.card, shadowColor: colors.cardShadow },
+    badgeName: { color: colors.text, fontSize: scale(14) },
+    badgeDescription: { color: colors.textSecondary, fontSize: scale(12) },
+    couponTitle: { color: colors.text, fontSize: scale(15) },
+    couponPoints: { color: colors.textSecondary, fontSize: scale(13) },
+    tipTitle: { color: colors.text, fontSize: scale(16) },
+    tipDescription: { color: colors.textSecondary, fontSize: scale(14) },
+    unlockedBadge: { backgroundColor: colors.primary + '20' },
+    unlockedText: { color: colors.primary, fontSize: scale(11) },
+    redeemButton: { backgroundColor: colors.primary },
+    redeemButtonText: { fontSize: scale(14) },
+    lockedText: { color: colors.textSecondary, fontSize: scale(14) },
+    couponIcon: { backgroundColor: colors.backgroundSecondary },
+  }), [colors, scale]);
+
+  const badges: Badge[] = useMemo(() => [
     {
       id: '1',
-      name: 'First Steps',
-      description: 'Complete your first day',
+      name: t.rewards.badge1Name,
+      description: t.rewards.badge1Desc,
       icon: Star,
-      color: Colors.warning,
-      gradient: Colors.gradient.warning,
+      color: colors.warning,
+      gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
+      unlockedGradient: colors.gradient.warning,
       unlocked: true,
     },
     {
       id: '2',
-      name: 'Week Warrior',
-      description: '7 day streak',
+      name: t.rewards.badge2Name,
+      description: t.rewards.badge2Desc,
       icon: Zap,
-      color: Colors.secondary,
-      gradient: Colors.gradient.secondary,
+      color: colors.secondary,
+      gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
+      unlockedGradient: colors.gradient.secondary,
       unlocked: true,
     },
     {
       id: '3',
-      name: 'Health Hero',
-      description: 'Complete all daily goals',
+      name: t.rewards.badge3Name,
+      description: t.rewards.badge3Desc,
       icon: Trophy,
-      color: Colors.primary,
-      gradient: Colors.gradient.success,
+      color: colors.primary,
+      gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
+      unlockedGradient: colors.gradient.success,
       unlocked: true,
     },
     {
       id: '4',
-      name: 'Hydration Master',
-      description: 'Drink 8 glasses for 7 days',
+      name: t.rewards.badge4Name,
+      description: t.rewards.badge4Desc,
       icon: Target,
-      color: Colors.chart.bmi,
-      gradient: [Colors.chart.bmi, Colors.chart.bmi + '80'],
+      color: colors.chart?.bmi || '#FFD60A',
+      gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
+      unlockedGradient: [colors.chart?.bmi || '#FFD60A', (colors.chart?.bmi || '#FFD60A') + '80'],
       unlocked: false,
     },
     {
       id: '5',
-      name: 'Step Champion',
-      description: 'Walk 10,000 steps for 30 days',
+      name: t.rewards.badge5Name,
+      description: t.rewards.badge5Desc,
       icon: TrendingUp,
-      color: Colors.chart.glucose,
-      gradient: [Colors.chart.glucose, Colors.chart.glucose + '80'],
+      color: colors.chart?.glucose || '#30D158',
+      gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
+      unlockedGradient: [colors.chart?.glucose || '#30D158', (colors.chart?.glucose || '#30D158') + '80'],
       unlocked: false,
     },
     {
       id: '6',
-      name: 'Wellness Guru',
-      description: 'Maintain 30 day streak',
+      name: t.rewards.badge6Name,
+      description: t.rewards.badge6Desc,
       icon: Heart,
-      color: Colors.error,
-      gradient: Colors.gradient.error,
+      color: colors.error,
+      gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
+      unlockedGradient: colors.gradient.error,
       unlocked: false,
     },
-  ];
+  ], [colors, t]);
 
-  const coupons = [
-    { id: '1', title: '10% Off Health Supplements', points: 500, available: rewardsPoints >= 500 },
-    { id: '2', title: 'Free Fitness Class', points: 1000, available: rewardsPoints >= 1000 },
-    { id: '3', title: '20% Off Gym Membership', points: 1500, available: rewardsPoints >= 1500 },
-    { id: '4', title: 'Free Health Consultation', points: 2000, available: rewardsPoints >= 2000 },
-  ];
+  const coupons = useMemo(() => [
+    { id: '1', title: t.rewards.coupon1, points: 500, available: rewardsPoints >= 500 },
+    { id: '2', title: t.rewards.coupon2, points: 1000, available: rewardsPoints >= 1000 },
+    { id: '3', title: t.rewards.coupon3, points: 1500, available: rewardsPoints >= 1500 },
+    { id: '4', title: t.rewards.coupon4, points: 2000, available: rewardsPoints >= 2000 },
+  ], [rewardsPoints, t]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Rewards</Text>
-        <Text style={styles.headerSubtitle}>Your achievements and benefits</Text>
+    <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
+      <View style={[styles.header, themed.header]}>
+        <Text style={[styles.headerTitle, themed.headerTitle]}>{t.rewards.header}</Text>
+        <Text style={[styles.headerSubtitle, themed.headerSubtitle]}>{t.rewards.subtitle}</Text>
       </View>
 
       <ScrollView
@@ -95,37 +130,37 @@ export default function RewardsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.statsCard}>
+        <View style={[styles.statsCard, themed.card]}>
           <LinearGradient
-            colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+            colors={colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
             style={styles.statsGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Award size={32} color={Colors.textWhite} strokeWidth={2} />
-                <Text style={styles.statValue}>{rewardsPoints}</Text>
-                <Text style={styles.statLabel}>Points</Text>
+                <Award size={32} color={colors.textWhite} strokeWidth={2} />
+                <Text style={[styles.statValue, themed.statsValue]}>{rewardsPoints}</Text>
+                <Text style={[styles.statLabel, themed.statsLabel]}>{t.rewards.statsPoints}</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                <Zap size={32} color={Colors.textWhite} strokeWidth={2} />
-                <Text style={styles.statValue}>{streak}</Text>
-                <Text style={styles.statLabel}>Day Streak</Text>
+                <Zap size={32} color={colors.textWhite} strokeWidth={2} />
+                <Text style={[styles.statValue, themed.statsValue]}>{streak}</Text>
+                <Text style={[styles.statLabel, themed.statsLabel]}>{t.rewards.statsStreak}</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                <Trophy size={32} color={Colors.textWhite} strokeWidth={2} />
-                <Text style={styles.statValue}>{badges.filter(b => b.unlocked).length}</Text>
-                <Text style={styles.statLabel}>Badges</Text>
+                <Trophy size={32} color={colors.textWhite} strokeWidth={2} />
+                <Text style={[styles.statValue, themed.statsValue]}>{badges.filter(b => b.unlocked).length}</Text>
+                <Text style={[styles.statLabel, themed.statsLabel]}>{t.rewards.statsBadges}</Text>
               </View>
             </View>
           </LinearGradient>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Badges</Text>
+          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.rewards.badgesTitle}</Text>
           <View style={styles.badgesGrid}>
             {badges.map((badge) => {
               const Icon = badge.icon;
@@ -134,31 +169,33 @@ export default function RewardsScreen() {
                   key={badge.id}
                   style={[
                     styles.badgeCard,
+                    themed.card,
                     !badge.unlocked && styles.badgeCardLocked,
                   ]}
                 >
                   <LinearGradient
-                    colors={badge.unlocked ? badge.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]] : [Colors.backgroundTertiary, Colors.backgroundTertiary] as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                    colors={badge.unlocked ? badge.unlockedGradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]] : badge.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
                     style={styles.badgeIconContainer}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
                     <Icon
                       size={32}
-                      color={badge.unlocked ? Colors.textWhite : Colors.textLight}
+                      color={badge.unlocked ? colors.textWhite : colors.textLight}
                       strokeWidth={2}
                     />
                   </LinearGradient>
                   <Text style={[
                     styles.badgeName,
-                    !badge.unlocked && styles.badgeNameLocked,
+                    themed.badgeName,
+                    !badge.unlocked && themed.lockedText,
                   ]}>
                     {badge.name}
                   </Text>
-                  <Text style={styles.badgeDescription}>{badge.description}</Text>
+                  <Text style={[styles.badgeDescription, themed.badgeDescription]}>{badge.description}</Text>
                   {badge.unlocked && (
-                    <View style={styles.unlockedBadge}>
-                      <Text style={styles.unlockedText}>Unlocked</Text>
+                    <View style={[styles.unlockedBadge, themed.unlockedBadge]}>
+                      <Text style={[styles.unlockedText, themed.unlockedText]}>{t.rewards.unlocked}</Text>
                     </View>
                   )}
                 </View>
@@ -168,45 +205,49 @@ export default function RewardsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Redeem Rewards</Text>
+          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.rewards.redeemTitle}</Text>
           {coupons.map((coupon) => (
-            <View key={coupon.id} style={styles.couponCard}>
-              <View style={styles.couponIcon}>
-                <Gift size={24} color={coupon.available ? Colors.primary : Colors.textLight} strokeWidth={2} />
+            <View key={coupon.id} style={[styles.couponCard, themed.card]}>
+              <View style={[styles.couponIcon, themed.couponIcon]}>
+                <Gift size={24} color={coupon.available ? colors.primary : colors.textLight} strokeWidth={2} />
               </View>
               <View style={styles.couponContent}>
                 <Text style={[
                   styles.couponTitle,
-                  !coupon.available && styles.couponTitleDisabled,
+                  themed.couponTitle,
+                  !coupon.available && themed.lockedText,
                 ]}>
                   {coupon.title}
                 </Text>
-                <Text style={styles.couponPoints}>{coupon.points} points</Text>
+                <Text style={[styles.couponPoints, themed.couponPoints]}>{coupon.points} {t.rewards.pointsSuffix}</Text>
               </View>
               <TouchableOpacity
                 style={[
                   styles.redeemButton,
-                  !coupon.available && styles.redeemButtonDisabled,
+                  themed.redeemButton,
+                  !coupon.available && { backgroundColor: colors.backgroundTertiary },
                 ]}
                 disabled={!coupon.available}
               >
                 <Text style={[
                   styles.redeemButtonText,
-                  !coupon.available && styles.redeemButtonTextDisabled,
+                  themed.redeemButtonText,
+                  { color: colors.textWhite },
+                  !coupon.available && { color: colors.textLight },
                 ]}>
-                  {coupon.available ? 'Redeem' : 'Locked'}
+                  {coupon.available ? t.rewards.redeem : t.rewards.locked}
                 </Text>
               </TouchableOpacity>
             </View>
           ))}
         </View>
 
-        <View style={styles.tipCard}>
-          <TrendingUp size={24} color={Colors.primary} strokeWidth={2} />
+        <View style={[styles.tipCard, themed.card]}>
+          <TrendingUp size={24} color={colors.primary} strokeWidth={2} />
           <View style={styles.tipContent}>
-            <Text style={styles.tipTitle}>Keep Going!</Text>
-            <Text style={styles.tipDescription}>
-              Complete your daily goals to earn more points and unlock exclusive rewards.
+            <Text style={[styles.tipTitle, themed.tipTitle]}>{t.rewards.tipTitle}</Text>
+            <Text style={[styles.tipDescription, themed.tipDescription]}>
+              {t.rewards.tipDescription}
             </Text>
           </View>
         </View>
@@ -218,21 +259,15 @@ export default function RewardsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundSecondary,
   },
   header: {
-    backgroundColor: Colors.background,
     paddingHorizontal: 20,
     paddingVertical: 20,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '700' as const,
-    color: Colors.text,
+    fontWeight: '700',
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
     marginTop: 4,
   },
   scrollView: {
@@ -246,7 +281,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     marginBottom: 24,
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
@@ -263,14 +297,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 28,
-    fontWeight: '700' as const,
-    color: Colors.textWhite,
+    fontWeight: '700',
     marginTop: 8,
   },
   statLabel: {
-    fontSize: 14,
-    color: Colors.textWhite,
     opacity: 0.9,
     marginTop: 4,
   },
@@ -282,24 +312,21 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: Colors.text,
+    fontWeight: '700',
     marginBottom: 16,
   },
   badgesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -6,
+    marginHorizontal: 0,
+    justifyContent: 'space-between',
   },
   badgeCard: {
-    width: '47%',
-    backgroundColor: Colors.card,
+    width: '46%', // Slightly reduced to ensure 2 columns fit with margins
     borderRadius: 16,
     padding: 16,
-    margin: 6,
+    margin: '2%', // Uniform margin
     alignItems: 'center',
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -317,41 +344,29 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   badgeName: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: Colors.text,
+    fontWeight: '700',
     textAlign: 'center',
     marginBottom: 4,
   },
-  badgeNameLocked: {
-    color: Colors.textSecondary,
-  },
   badgeDescription: {
-    fontSize: 12,
-    color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 16,
   },
   unlockedBadge: {
-    backgroundColor: Colors.primary + '20',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
     marginTop: 8,
   },
   unlockedText: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.primary,
+    fontWeight: '600',
   },
   couponCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -361,7 +376,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: Colors.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -370,41 +384,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   couponTitle: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: Colors.text,
+    fontWeight: '600',
     marginBottom: 4,
   },
-  couponTitleDisabled: {
-    color: Colors.textSecondary,
-  },
-  couponPoints: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
+  couponPoints: {},
   redeemButton: {
-    backgroundColor: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
   },
-  redeemButtonDisabled: {
-    backgroundColor: Colors.backgroundTertiary,
-  },
   redeemButtonText: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.textWhite,
-  },
-  redeemButtonTextDisabled: {
-    color: Colors.textLight,
+    fontWeight: '600',
   },
   tipCard: {
     flexDirection: 'row',
-    backgroundColor: Colors.card,
     borderRadius: 16,
     padding: 16,
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -415,14 +410,10 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   tipTitle: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-    color: Colors.text,
+    fontWeight: '700',
     marginBottom: 4,
   },
   tipDescription: {
-    fontSize: 14,
-    color: Colors.textSecondary,
     lineHeight: 20,
   },
 });
