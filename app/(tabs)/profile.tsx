@@ -2,25 +2,76 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { User as UserIcon, Mail, Calendar, Ruler, Weight, Heart, Settings, LogOut, ChevronRight } from 'lucide-react-native';
-import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
-import { useState } from 'react';
+import { useTheme } from '@/contexts/SettingsContext';
+import { useState, useMemo } from 'react';
+import { useTranslation } from '@/hooks/use-translation';
+
+import { useFocusEffect } from 'expo-router';
+import { DIABETES_URL } from '@/constants/Api';
+import { useCallback } from 'react';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, logout } = useUser();
+  const { user, logout, ensureAccessToken } = useUser();
+  const { colors, scale } = useTheme();
+  const { t } = useTranslation();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [latestRecord, setLatestRecord] = useState<any>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      const fetchLatestRecord = async () => {
+        try {
+          const token = await ensureAccessToken();
+          const response = await fetch(`${DIABETES_URL}/latest`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const json = await response.json();
+          if (json.success && json.hasHistory) {
+            setLatestRecord(json);
+          }
+        } catch (e) {
+          console.log("Failed to fetch latest record", e);
+        }
+      };
+      fetchLatestRecord();
+    }, [])
+  );
+
+  const getRiskColor = (level: string) => {
+    switch (level) {
+      case 'High Risk': return colors.risk.high;
+      case 'Medium Risk': return colors.risk.moderate;
+      default: return colors.risk.low;
+    }
+  };
+
+  // Dynamic Styles
+  const themed = useMemo(() => ({
+    container: { backgroundColor: colors.backgroundSecondary },
+    header: { backgroundColor: colors.background },
+    headerTitle: { color: colors.text, fontSize: scale(28) },
+    card: { backgroundColor: colors.card, shadowColor: colors.cardShadow },
+    text: { color: colors.text },
+    textSecondary: { color: colors.textSecondary },
+    sectionTitle: { color: colors.text, fontSize: scale(18) },
+    infoLabel: { color: colors.textSecondary, fontSize: scale(12) },
+    infoValue: { color: colors.text, fontSize: scale(15) },
+    menuLabel: { color: colors.text, fontSize: scale(16) },
+    logoutButton: { backgroundColor: colors.card, borderColor: colors.error + '40' },
+  }), [colors, scale]);
 
   const handleLogout = () => {
     if (isLoggingOut) return;
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      t.profile.logoutConfirmTitle,
+      t.profile.logoutConfirmDesc,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t.common.cancel, style: 'cancel' },
         {
-          text: 'Logout',
+          text: t.profile.logout,
           style: 'destructive',
           onPress: async () => {
             try {
@@ -38,41 +89,41 @@ export default function ProfileScreen() {
 
   // Helper to map sex code to string
   const getGenderString = (sex?: number) => {
-    if (sex === 1) return 'Male';
-    if (sex === 0) return 'Female';
-    return 'Not set';
+    if (sex === 1) return t.profile.male;
+    if (sex === 0) return t.profile.female;
+    return t.profile.notSet;
   };
 
   // Helper to get age display
   const getAgeDisplay = (age?: number) => {
-    if (!age) return 'Not set';
+    if (!age) return t.profile.notSet;
     // If age is a category (1-13), map to range
     if (age <= 13) {
       const ranges = ['18-24', '25-29', '30-34', '35-39', '40-44', '45-49', '50-54', '55-59', '60-64', '65-69', '70-74', '75-79', '80+'];
       const range = ranges[age - 1]; // 1-based index
-      return range ? `Age Group: ${range}` : `${age} years`;
+      return range ? `${t.profile.group}${range}` : `${age}${t.profile.years}`;
     }
     // Otherwise assume valid age years
-    return `${age} years`;
+    return `${age}${t.profile.years}`;
   };
 
   const profileInfo = [
-    { icon: Mail, label: 'Email', value: user?.email || 'Not set' },
-    { icon: Calendar, label: 'Age', value: getAgeDisplay(user?.age) },
-    { icon: UserIcon, label: 'Gender', value: getGenderString(user?.sex) },
-    { icon: Ruler, label: 'Height', value: user?.height ? `${user.height} cm` : 'Not set' },
-    { icon: Weight, label: 'Weight', value: user?.weight ? `${user.weight} kg` : 'Not set' },
+    { icon: Mail, label: t.profile.email, value: user?.email || t.profile.notSet },
+    { icon: Calendar, label: t.profile.age, value: getAgeDisplay(user?.age) },
+    { icon: UserIcon, label: t.profile.gender, value: getGenderString(user?.sex) },
+    { icon: Ruler, label: t.profile.height, value: user?.height ? `${user.height} cm` : t.profile.notSet },
+    { icon: Weight, label: t.profile.weight, value: user?.weight ? `${user.weight} kg` : t.profile.notSet },
   ];
 
   const menuItems = [
-    { icon: Settings, label: 'Settings', route: '/settings', color: Colors.primary },
-    { icon: Heart, label: 'Health Records', route: '/ehr-upload', color: Colors.error },
+    { icon: Settings, label: t.settings.header, route: '/settings', color: colors.primary },
+    { icon: Heart, label: t.profile.healthRecords.header, route: '/health-history', color: colors.error },
   ];
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
+    <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
+      <View style={[styles.header, themed.header]}>
+        <Text style={[styles.headerTitle, themed.headerTitle]}>{t.profile.header}</Text>
       </View>
 
       <ScrollView
@@ -80,32 +131,32 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.profileCard}>
+        <View style={[styles.profileCard, themed.card]}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <UserIcon size={48} color={Colors.primary} strokeWidth={2} />
+            <View style={[styles.avatar, { backgroundColor: colors.primary + '20' }]}>
+              <UserIcon size={48} color={colors.primary} strokeWidth={2} />
             </View>
           </View>
-          <Text style={styles.userName}>{user?.name || 'User'}</Text>
-          <Text style={styles.userEmail}>{user?.email || 'email@example.com'}</Text>
+          <Text style={[styles.userName, themed.text, { fontSize: scale(24) }]}>{user?.name || t.profile.male}</Text>
+          <Text style={[styles.userEmail, themed.textSecondary, { fontSize: scale(14) }]}>{user?.email || 'email@example.com'}</Text>
 
-          <TouchableOpacity style={styles.editButton} onPress={() => router.push('/edit-profile' as any)}>
-            <Text style={styles.editButtonText}>Edit Profile</Text>
+          <TouchableOpacity style={[styles.editButton, { backgroundColor: colors.primary }]} onPress={() => router.push('/edit-profile' as any)}>
+            <Text style={[styles.editButtonText, { color: colors.textWhite, fontSize: scale(14) }]}>{t.profile.editProfile}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Personal Information</Text>
+          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.profile.personalInfo}</Text>
           {profileInfo.map((item, index) => {
             const Icon = item.icon;
             return (
-              <View key={index} style={styles.infoCard}>
-                <View style={styles.infoIcon}>
-                  <Icon size={20} color={Colors.primary} strokeWidth={2} />
+              <View key={index} style={[styles.infoCard, themed.card]}>
+                <View style={[styles.infoIcon, { backgroundColor: colors.primary + '20' }]}>
+                  <Icon size={20} color={colors.primary} strokeWidth={2} />
                 </View>
                 <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>{item.label}</Text>
-                  <Text style={styles.infoValue}>{item.value}</Text>
+                  <Text style={[styles.infoLabel, themed.infoLabel]}>{item.label}</Text>
+                  <Text style={[styles.infoValue, themed.infoValue]}>{item.value}</Text>
                 </View>
               </View>
             );
@@ -113,47 +164,52 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Access</Text>
+          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.profile.quickAccess}</Text>
           {menuItems.map((item, index) => {
             const Icon = item.icon;
             return (
               <TouchableOpacity
                 key={index}
-                style={styles.menuCard}
+                style={[styles.menuCard, themed.card]}
                 onPress={() => router.push(item.route as any)}
               >
                 <View style={[styles.menuIcon, { backgroundColor: item.color + '20' }]}>
                   <Icon size={24} color={item.color} strokeWidth={2} />
                 </View>
-                <Text style={styles.menuLabel}>{item.label}</Text>
-                <ChevronRight size={20} color={Colors.textSecondary} strokeWidth={2} />
+                <Text style={[styles.menuLabel, themed.menuLabel]}>{item.label}</Text>
+                <ChevronRight size={20} color={colors.textSecondary} strokeWidth={2} />
               </TouchableOpacity>
             );
           })}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Medical History</Text>
-          <View style={styles.historyCard}>
-            {user?.medicalHistory && user.medicalHistory.length > 0 ? (
-              user.medicalHistory.map((item, index) => (
-                <View key={index} style={styles.historyItem}>
-                  <View style={styles.historyDot} />
-                  <Text style={styles.historyText}>{item}</Text>
+          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.profile.medicalHistory}</Text>
+          <View style={[styles.historyCard, themed.card]}>
+            {latestRecord ? (
+              <View>
+                <View style={styles.historyItem}>
+                  <View style={[styles.historyDot, { backgroundColor: getRiskColor(latestRecord.riskLevel) }]} />
+                  <Text style={[styles.historyText, themed.text, { fontSize: scale(14), fontWeight: '600' }]}>
+                    {latestRecord.riskLevel} ({latestRecord.riskScore}%)
+                  </Text>
                 </View>
-              ))
+                <Text style={[themed.textSecondary, { fontSize: scale(12), marginLeft: 20 }]}>
+                  {new Date(latestRecord.timestamp).toLocaleDateString()}
+                </Text>
+              </View>
             ) : (
-              <Text style={styles.emptyText}>No medical history recorded</Text>
+              <Text style={[styles.emptyText, themed.textSecondary, { fontSize: scale(14) }]}>{t.profile.noHistory}</Text>
             )}
           </View>
         </View>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} disabled={isLoggingOut}>
-          <LogOut size={20} color={Colors.error} strokeWidth={2} />
-          <Text style={styles.logoutText}>{isLoggingOut ? 'Logging out...' : 'Logout'}</Text>
+        <TouchableOpacity style={[styles.logoutButton, themed.logoutButton]} onPress={handleLogout} disabled={isLoggingOut}>
+          <LogOut size={20} color={colors.error} strokeWidth={2} />
+          <Text style={[styles.logoutText, { color: colors.error, fontSize: scale(16) }]}>{isLoggingOut ? t.profile.loggingOut : t.profile.logout}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.versionText}>SweetTrack v1.0.0</Text>
+        <Text style={[styles.versionText, { color: colors.textLight, fontSize: scale(12) }]}>SweetTrack v1.0.0</Text>
       </ScrollView>
     </View>
   );
@@ -162,17 +218,13 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundSecondary,
   },
   header: {
-    backgroundColor: Colors.background,
     paddingHorizontal: 20,
     paddingVertical: 20,
   },
   headerTitle: {
-    fontSize: 28,
     fontWeight: '700' as const,
-    color: Colors.text,
   },
   scrollView: {
     flex: 1,
@@ -182,12 +234,10 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
   },
   profileCard: {
-    backgroundColor: Colors.card,
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
     marginBottom: 24,
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -200,45 +250,34 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: Colors.primary + '20',
     alignItems: 'center',
     justifyContent: 'center',
   },
   userName: {
-    fontSize: 24,
     fontWeight: '700' as const,
-    color: Colors.text,
     marginBottom: 4,
   },
   userEmail: {
-    fontSize: 14,
-    color: Colors.textSecondary,
     marginBottom: 16,
   },
   editButton: {
-    backgroundColor: Colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 10,
     borderRadius: 20,
   },
   editButtonText: {
-    fontSize: 14,
     fontWeight: '600' as const,
-    color: Colors.textWhite,
   },
   section: {
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 18,
     fontWeight: '700' as const,
-    color: Colors.text,
     marginBottom: 12,
   },
   infoCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
@@ -247,7 +286,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: Colors.primary + '20',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -256,19 +294,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   infoLabel: {
-    fontSize: 12,
-    color: Colors.textSecondary,
     marginBottom: 2,
   },
   infoValue: {
-    fontSize: 15,
     fontWeight: '600' as const,
-    color: Colors.text,
   },
   menuCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
@@ -283,12 +316,9 @@ const styles = StyleSheet.create({
   },
   menuLabel: {
     flex: 1,
-    fontSize: 16,
     fontWeight: '600' as const,
-    color: Colors.text,
   },
   historyCard: {
-    backgroundColor: Colors.card,
     borderRadius: 12,
     padding: 16,
   },
@@ -301,17 +331,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.primary,
     marginRight: 12,
   },
   historyText: {
     flex: 1,
-    fontSize: 14,
-    color: Colors.text,
   },
   emptyText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
     textAlign: 'center',
     fontStyle: 'italic' as const,
   },
@@ -319,22 +344,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: Colors.error + '40',
   },
   logoutText: {
-    fontSize: 16,
     fontWeight: '600' as const,
-    color: Colors.error,
     marginLeft: 8,
   },
   versionText: {
-    fontSize: 12,
-    color: Colors.textLight,
     textAlign: 'center',
   },
 });
