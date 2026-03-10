@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send, Bot, User as UserIcon } from 'lucide-react-native';
 import Constants from 'expo-constants';
-import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
+import { useTheme } from '@/contexts/SettingsContext';
+import { useTranslation } from '@/hooks/use-translation';
 
 // Get API base URL for dynamic platform detection
 const getApiBaseUrl = () => {
@@ -30,8 +31,8 @@ const getApiBaseUrl = () => {
   if (Platform.OS === 'android') {
     // Check if running on emulator vs physical device
     const isEmulator = Constants.deviceName?.includes('sdk') ||
-                      Constants.deviceName?.includes('emulator') ||
-                      !Constants.deviceName; // null deviceName often means emulator
+      Constants.deviceName?.includes('emulator') ||
+      !Constants.deviceName; // null deviceName often means emulator
 
     if (isEmulator) {
       console.log('🤖 Android Emulator detected - Using 10.0.2.2');
@@ -67,32 +68,33 @@ type Message = {
   timestamp: Date;
 };
 
-const QUICK_REPLIES = [
-  'Diet Tips',
-  'Sleep Advice',
-  'Exercise Plans',
-  'Stress Management',
+const getQuickReplies = (t: any) => [
+  t.chatbot.dietTips,
+  t.chatbot.sleepAdvice,
+  t.chatbot.exercisePlans,
+  t.chatbot.stressManagement,
+  t.chatbot.whatToEat,
 ];
-
-const BOT_RESPONSES: Record<string, string> = {
-  'Diet Tips':
-    'Here are some diet tips:\n\n• Eat plenty of fruits and vegetables\n• Stay hydrated with 8 glasses of water daily\n• Include lean proteins in your meals\n• Limit processed foods and sugar\n• Practice portion control',
-  'Sleep Advice':
-    'For better sleep:\n\n• Maintain a consistent sleep schedule\n• Create a relaxing bedtime routine\n• Keep your bedroom cool and dark\n• Avoid screens 1 hour before bed\n• Limit caffeine after 2 PM',
-  'Exercise Plans':
-    'Recommended exercise routine:\n\n• 30 minutes of cardio 5 days a week\n• Strength training 2-3 times per week\n• Yoga or stretching daily\n• Take 10,000 steps daily\n• Stay active throughout the day',
-  'Stress Management':
-    'Manage stress effectively:\n\n• Practice deep breathing exercises\n• Try meditation for 10 minutes daily\n• Stay connected with loved ones\n• Engage in hobbies you enjoy\n• Get regular physical activity',
-};
 
 export default function ChatbotScreen() {
   const insets = useSafeAreaInsets();
+  const { t, language } = useTranslation();
   const { user } = useUser();
+  const { colors, scale } = useTheme();
+
+  const QUICK_REPLIES = useMemo(() => getQuickReplies(t), [t]);
+
+  const BOT_RESPONSES: Record<string, string> = useMemo(() => ({
+    [t.chatbot.dietTips]: t.chatbot.responses.dietTips,
+    [t.chatbot.sleepAdvice]: t.chatbot.responses.sleepAdvice,
+    [t.chatbot.exercisePlans]: t.chatbot.responses.exercisePlans,
+    [t.chatbot.stressManagement]: t.chatbot.responses.stressManagement,
+  }), [t]);
 
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: `Hello ${user?.name || 'there'}! I'm SweetTrack AI, your health assistant. How can I help you today?`,
+      text: t.chatbot.initialMessage.replace('{name}', user?.name || (language === 'en' ? 'there' : language === 'ja' ? 'さん' : 'मित्र')),
       sender: 'bot',
       timestamp: new Date(),
     },
@@ -107,7 +109,23 @@ export default function ChatbotScreen() {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   }, [messages, isTyping]);
 
-  // ✅ FIXED handleSend (NO undefined message now)
+  // Dynamic Styles
+  const themed = useMemo(() => ({
+    container: { backgroundColor: colors.backgroundSecondary },
+    header: { backgroundColor: colors.background, borderBottomColor: colors.border },
+    headerTitle: { color: colors.text, fontSize: scale(20) },
+    headerSubtitle: { color: colors.textSecondary, fontSize: scale(14) },
+    inputContainer: { backgroundColor: colors.background, borderTopColor: colors.border },
+    input: { backgroundColor: colors.backgroundSecondary, color: colors.text, fontSize: scale(15) },
+    botBubble: { backgroundColor: colors.card, borderColor: colors.border },
+    userBubble: { backgroundColor: colors.primary },
+    messageText: { color: colors.text, fontSize: scale(15) },
+    userMessageText: { color: colors.textWhite, fontSize: scale(15) },
+    quickRepliesContainer: { backgroundColor: colors.background, borderTopColor: colors.border },
+    quickReplyButton: { backgroundColor: colors.backgroundSecondary, borderColor: colors.primary },
+    quickReplyText: { color: colors.primary, fontSize: scale(14) },
+  }), [colors, scale]);
+
   const handleSend = (text?: string) => {
     const messageText =
       typeof text === 'string' && text.trim().length > 0
@@ -129,12 +147,21 @@ export default function ChatbotScreen() {
 
     (async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/chatbot', {
+        // Prepare history (last 10 messages)
+        const history = messages.slice(-10).map(msg => ({
+          role: msg.sender === 'user' ? 'user' : 'assistant',
+          content: msg.text
+        }));
+
+        const res = await fetch(`${API_BASE_URL}/chatbot`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: messageText,
             riskLevel: user?.medicalHistory?.length ? 'Higher Risk' : 'General',
+            history: history,
+            userName: user?.name || 'User',
+            language: language
           }),
         });
 
@@ -144,7 +171,7 @@ export default function ChatbotScreen() {
           data?.success && data?.reply
             ? data.reply
             : BOT_RESPONSES[messageText] ||
-              'I am here to support your general wellness.';
+            t.chatbot.fallbackReply;
 
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -161,7 +188,7 @@ export default function ChatbotScreen() {
             id: (Date.now() + 1).toString(),
             text:
               BOT_RESPONSES[messageText] ||
-              'I am currently having trouble responding. Please try again later.',
+              t.chatbot.errorReply,
             sender: 'bot',
             timestamp: new Date(),
           },
@@ -174,17 +201,17 @@ export default function ChatbotScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: insets.top }]}
+      style={[styles.container, themed.container, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <View style={styles.header}>
-        <View style={styles.headerIcon}>
-          <Bot size={28} color={Colors.primary} strokeWidth={2} />
+      <View style={[styles.header, themed.header]}>
+        <View style={[styles.headerIcon, { backgroundColor: colors.primary + '20' }]}>
+          <Bot size={28} color={colors.primary} strokeWidth={2} />
         </View>
         <View style={styles.headerText}>
-          <Text style={styles.headerTitle}>Ask SweetTrack AI</Text>
-          <Text style={styles.headerSubtitle}>Your AI Health Assistant</Text>
+          <Text style={[styles.headerTitle, themed.headerTitle]}>{t.chatbot.header}</Text>
+          <Text style={[styles.headerSubtitle, themed.headerSubtitle]}>{t.chatbot.subtitle}</Text>
         </View>
       </View>
 
@@ -200,29 +227,29 @@ export default function ChatbotScreen() {
             style={[
               styles.messageBubble,
               message.sender === 'user'
-                ? styles.userBubble
-                : styles.botBubble,
+                ? themed.userBubble
+                : themed.botBubble,
             ]}
           >
             <View style={styles.messageHeader}>
               {message.sender === 'bot' ? (
-                <Bot size={20} color={Colors.primary} strokeWidth={2} />
+                <Bot size={20} color={colors.primary} strokeWidth={2} />
               ) : (
-                <UserIcon size={20} color={Colors.textWhite} strokeWidth={2} />
+                <UserIcon size={20} color={colors.textWhite} strokeWidth={2} />
               )}
               <Text
                 style={[
                   styles.messageSender,
-                  message.sender === 'user' && styles.userMessageSender,
+                  { color: message.sender === 'user' ? colors.textWhite : colors.primary }
                 ]}
               >
-                {message.sender === 'bot' ? 'SweetTrack' : 'You'}
+                {message.sender === 'bot' ? t.chatbot.aiName : t.chatbot.you}
               </Text>
             </View>
             <Text
               style={[
                 styles.messageText,
-                message.sender === 'user' && styles.userMessageText,
+                message.sender === 'user' ? themed.userMessageText : themed.messageText,
               ]}
             >
               {message.text}
@@ -230,7 +257,7 @@ export default function ChatbotScreen() {
             <Text
               style={[
                 styles.messageTime,
-                message.sender === 'user' && styles.userMessageTime,
+                { color: message.sender === 'user' ? 'rgba(255,255,255,0.7)' : colors.textLight }
               ]}
             >
               {message.timestamp.toLocaleTimeString([], {
@@ -242,45 +269,46 @@ export default function ChatbotScreen() {
         ))}
 
         {isTyping && (
-          <Text style={{ marginLeft: 20, color: Colors.textLight }}>
-            SweetTrack AI is typing...
+          <Text style={{ marginLeft: 20, color: colors.textLight }}>
+            {t.chatbot.typing}
           </Text>
         )}
       </ScrollView>
 
-      <View style={styles.quickRepliesContainer}>
+      <View style={[styles.quickRepliesContainer, themed.quickRepliesContainer]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {QUICK_REPLIES.map((reply, index) => (
             <TouchableOpacity
               key={index}
-              style={styles.quickReplyButton}
+              style={[styles.quickReplyButton, themed.quickReplyButton]}
               onPress={() => handleSend(reply)}
             >
-              <Text style={styles.quickReplyText}>{reply}</Text>
+              <Text style={[styles.quickReplyText, themed.quickReplyText]}>{reply}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
 
-      <View style={[styles.inputContainer, { paddingBottom: insets.bottom || 10 }]}>
+      <View style={[styles.inputContainer, themed.inputContainer, { paddingBottom: insets.bottom || 10 }]}>
         <TextInput
-          style={styles.input}
+          style={[styles.input, themed.input]}
           value={inputText}
           onChangeText={setInputText}
-          placeholder="Type your message..."
-          placeholderTextColor={Colors.textLight}
+          placeholder={t.chatbot.placeholder}
+          placeholderTextColor={colors.textLight}
           multiline
           maxLength={500}
         />
         <TouchableOpacity
           style={[
             styles.sendButton,
+            { backgroundColor: colors.primary },
             !inputText.trim() && styles.sendButtonDisabled,
           ]}
           onPress={() => handleSend()}
           disabled={!inputText.trim()}
         >
-          <Send size={20} color={Colors.textWhite} strokeWidth={2} />
+          <Send size={20} color={colors.textWhite} strokeWidth={2} />
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -290,22 +318,18 @@ export default function ChatbotScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundSecondary,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background,
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   headerIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: Colors.primary + '20',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -314,13 +338,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 20,
     fontWeight: '700',
-    color: Colors.text,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
     marginTop: 2,
   },
   messagesContainer: {
@@ -335,16 +355,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 12,
   },
-  userBubble: {
-    alignSelf: 'flex-end',
-    backgroundColor: Colors.primary,
-  },
-  botBubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
   messageHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -353,64 +363,42 @@ const styles = StyleSheet.create({
   messageSender: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.primary,
     marginLeft: 6,
-  },
-  userMessageSender: {
-    color: Colors.textWhite,
   },
   messageText: {
     fontSize: 15,
-    color: Colors.text,
-  },
-  userMessageText: {
-    color: Colors.textWhite,
   },
   messageTime: {
     fontSize: 11,
-    color: Colors.textLight,
     marginTop: 6,
   },
-  userMessageTime: {
-    color: 'rgba(255,255,255,0.7)',
-  },
   quickRepliesContainer: {
-    backgroundColor: Colors.background,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
   },
   quickReplyButton: {
     marginHorizontal: 8,
-    backgroundColor: Colors.backgroundSecondary,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.primary,
   },
   quickReplyText: {
-    fontSize: 14,
     fontWeight: '600',
-    color: Colors.primary,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    backgroundColor: Colors.background,
     paddingHorizontal: 20,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
   },
   input: {
     flex: 1,
-    backgroundColor: Colors.backgroundSecondary,
     borderRadius: 24,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 15,
-    color: Colors.text,
     maxHeight: 100,
     marginRight: 12,
   },
@@ -418,7 +406,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
