@@ -3,6 +3,7 @@ import { Home, Activity, MessageCircle, Award, User } from "lucide-react-native"
 import React, { type ReactElement } from "react";
 import Colors from "@/constants/colors";
 import { HapticTab } from "@/components/haptic-tab";
+import { useTranslation } from "@/hooks/use-translation";
 
 // Define the type locally instead of importing
 type TabBarIconProps = {
@@ -12,6 +13,8 @@ type TabBarIconProps = {
 };
 
 export default function TabLayout(): ReactElement {
+  const { t } = useTranslation();
+
   return (
     <Tabs
       screenOptions={{
@@ -33,35 +36,35 @@ export default function TabLayout(): ReactElement {
       <Tabs.Screen
         name="home"
         options={{
-          title: "Home",
+          title: t.tabs.home,
           tabBarIcon: ({ color, size }: TabBarIconProps) => <Home size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="wellness"
         options={{
-          title: "Wellness",
+          title: t.tabs.wellness,
           tabBarIcon: ({ color, size }: TabBarIconProps) => <Activity size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="chatbot"
         options={{
-          title: "Ask Chori",
+          title: t.tabs.chatbot,
           tabBarIcon: ({ color, size }: TabBarIconProps) => <MessageCircle size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="rewards"
         options={{
-          title: "Rewards",
+          title: t.tabs.rewards,
           tabBarIcon: ({ color, size }: TabBarIconProps) => <Award size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          title: t.tabs.profile,
           tabBarIcon: ({ color, size }: TabBarIconProps) => <User size={size} color={color} />,
         }}
       />
