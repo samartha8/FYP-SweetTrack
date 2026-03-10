@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "diabetesapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "extra": {
       "apiHost": "192.168.1.76"
     },
@@ -41,7 +41,10 @@
               "pathPrefix": "/error"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -67,7 +70,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": false
     }
   }
 }
