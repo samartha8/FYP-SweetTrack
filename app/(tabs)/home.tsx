@@ -1,11 +1,13 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ColorValue } from 'react-native';
-import { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ColorValue, Platform } from 'react-native';
+import { useState, useCallback, useMemo } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Heart, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCrossed, Camera, BarChart3, List, Link } from 'lucide-react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { Heart, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCrossed, Camera, BarChart3, List, Link, ChevronRight } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Colors from '@/constants/colors';
+import { useTranslation } from '@/hooks/use-translation';
 import { useUser } from '@/contexts/UserContext';
+import { DIABETES_URL } from '../../constants/Api';
+import { useTheme } from '@/contexts/SettingsContext';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 60) / 2;
@@ -14,66 +16,108 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, healthMetrics, dailyGoals, rewardsPoints, streak, isGoogleFitConnected, connectGoogleFit, ensureAccessToken } = useUser();
-  const [predictionData, setPredictionData] = useState({ riskScore: 0, riskLevel: 'Low', hasHistory: false });
+  const { colors, scale } = useTheme(); // Global Theme Hook
+  const { t } = useTranslation();
+  const [predictionData, setPredictionData] = useState({ riskScore: 0, riskLevel: 'Low Risk', hasHistory: false });
 
-  useEffect(() => {
-    const fetchPrediction = async () => {
-      try {
-        if (!user) return;
-        const token = await ensureAccessToken();
-        // Adjust URL for your environment (emulator vs device)
-        const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5000';
-        const response = await fetch(`${API_URL}/api/diabetes/latest`, {
-          headers: { 'Authorization': `Bearer ${token || ''}` }
-        });
-        const json = await response.json();
-        if (json.success && json.hasHistory) {
-          setPredictionData({
-            riskScore: json.riskScore,
-            riskLevel: json.riskLevel,
-            hasHistory: true
+  // Dynamic Styles
+  const themed = useMemo(() => ({
+    container: { backgroundColor: colors.backgroundSecondary },
+    header: { backgroundColor: colors.background },
+    greeting: { color: colors.text, fontSize: scale(24) },
+    subtitle: { color: colors.textSecondary, fontSize: scale(14) },
+    sectionTitle: { color: colors.text, fontSize: scale(20) },
+    statValue: { color: colors.text, fontSize: scale(24) },
+    statUnit: { color: colors.textSecondary },
+    statLabel: { color: colors.textSecondary, fontSize: scale(14) },
+    featureLabel: { color: colors.text, fontSize: scale(14) },
+    rewardLabel: { color: colors.textSecondary, fontSize: scale(14) },
+    rewardValue: { fontSize: scale(28) },
+    tipTitle: { color: colors.text, fontSize: scale(16) },
+    tipDescription: { color: colors.textSecondary, fontSize: scale(14) },
+    card: { backgroundColor: colors.card, shadowColor: colors.cardShadow },
+    riskBadgeText: { fontSize: scale(12) },
+    riskScore: { fontSize: scale(48) },
+    riskLabel: { fontSize: scale(16) },
+    riskDescription: { fontSize: scale(14) },
+    googleFitTitle: { fontSize: scale(20) },
+    googleFitDescription: { fontSize: scale(14) },
+    statGoal: { fontSize: scale(12), color: colors.textSecondary },
+    sectionLink: { fontSize: scale(14) },
+  }), [colors, scale]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const fetchPrediction = async () => {
+        try {
+          if (!user) return;
+          let token = await ensureAccessToken();
+          // Add timestamp to prevent caching
+          let response = await fetch(`${DIABETES_URL}/latest?t=${Date.now()}`, {
+            headers: { 'Authorization': `Bearer ${token || ''}` }
           });
+
+          // ✅ 401 Retry Logic
+          if (response.status === 401) {
+            console.log('Home: Token expired, refreshing...');
+            token = await ensureAccessToken(true);
+            if (token) {
+              response = await fetch(`${DIABETES_URL}/latest?t=${Date.now()}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+            }
+          }
+
+          const json = await response.json();
+          if (json.success && json.hasHistory) {
+            setPredictionData({
+              riskScore: json.riskScore,
+              riskLevel: json.riskLevel,
+              hasHistory: true
+            });
+          }
+        } catch (e) {
+          console.log('Failed to fetch prediction preview', e);
         }
-      } catch (e) {
-        console.log('Failed to fetch prediction preview', e);
-      }
-    };
-    fetchPrediction();
-  }, [user]);
+      };
+
+      fetchPrediction();
+    }, [user, ensureAccessToken])
+  );
 
   const { riskScore, riskLevel } = predictionData;
-  const riskColor = riskLevel === 'High' ? Colors.risk.high : riskLevel === 'Moderate' ? Colors.risk.moderate : Colors.risk.low;
+  const riskColor = riskLevel === 'High Risk' ? colors.risk.high : riskLevel === 'Medium Risk' ? colors.risk.moderate : colors.risk.low;
 
   const quickStats = [
-    { icon: Activity, label: 'Steps', value: healthMetrics.steps, goal: dailyGoals.steps, unit: '', color: Colors.chart.bmi },
-    { icon: Droplet, label: 'Water', value: healthMetrics.water, goal: dailyGoals.water, unit: 'glasses', color: Colors.secondary },
-    { icon: Moon, label: 'Sleep', value: healthMetrics.sleep, goal: dailyGoals.sleep, unit: 'hrs', color: Colors.chart.glucose },
-    { icon: Flame, label: 'Calories', value: healthMetrics.calories, goal: dailyGoals.calories, unit: 'kcal', color: Colors.warning },
+    { icon: Activity, label: t.wellness.steps, value: healthMetrics.steps, goal: dailyGoals.steps, unit: '', color: colors.chart.bmi },
+    { icon: Droplet, label: t.wellness.water, value: healthMetrics.water, goal: dailyGoals.water, unit: t.wellness.unitWater, color: colors.secondary },
+    { icon: Moon, label: t.wellness.sleep, value: healthMetrics.sleep, goal: dailyGoals.sleep, unit: t.wellness.unitSleep, color: colors.chart.glucose },
+    { icon: Flame, label: t.wellness.calories, value: healthMetrics.calories, goal: dailyGoals.calories, unit: t.wellness.unitCalories, color: colors.warning },
   ];
 
   const features = [
-    { icon: UtensilsCrossed, label: 'Diet Suggestion', route: '/diet-suggestions', gradient: Colors.gradient.success },
-    { icon: Camera, label: 'Meal Log', route: '/meal-log', gradient: Colors.gradient.warning },
-    { icon: BarChart3, label: 'Progress', route: '/progress', gradient: Colors.gradient.secondary },
-    { icon: List, label: 'View All', route: '/view-all-meals', gradient: Colors.gradient.error },
+    { icon: UtensilsCrossed, label: t.home.dietSuggestion, route: '/diet-suggestions', gradient: colors.gradient.success },
+    { icon: Camera, label: t.home.mealLog, route: '/meal-log', gradient: colors.gradient.warning },
+    { icon: BarChart3, label: t.home.progress, route: '/progress', gradient: colors.gradient.secondary },
+    { icon: List, label: t.home.viewAllMeals, route: '/view-all-meals', gradient: colors.gradient.error },
   ];
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, themed.header]}>
           <View>
-            <Text style={styles.greeting}>Hello, {user?.name || 'User'}!</Text>
-            <Text style={styles.subtitle}>Let&apos;s check your health today</Text>
+            <Text style={[styles.greeting, themed.greeting]}>{t.home.greeting}, {user?.name || 'User'}!</Text>
+            <Text style={[styles.subtitle, themed.subtitle]}>{t.home.greetingSub}</Text>
           </View>
         </View>
 
         <TouchableOpacity
-          style={styles.riskCard}
+          style={[styles.riskCard, { shadowColor: colors.cardShadow }]}
           activeOpacity={0.8}
           onPress={() => router.push('/prediction' as any)}
         >
@@ -84,15 +128,19 @@ export default function HomeScreen() {
             end={{ x: 1, y: 1 }}
           >
             <View style={styles.riskHeader}>
-              <Heart size={32} color={Colors.textWhite} strokeWidth={2} />
+              <Heart size={32} color={colors.textWhite} strokeWidth={2} />
               <View style={styles.riskBadge}>
-                <Text style={styles.riskBadgeText}>{riskLevel} Risk</Text>
+                <Text style={[styles.riskBadgeText, themed.riskBadgeText]}>
+                  {riskLevel === 'Low Risk' ? t.home.riskLow : riskLevel === 'Medium Risk' ? t.home.riskMedium : t.home.riskHigh}
+                </Text>
               </View>
             </View>
-            <Text style={styles.riskScore}>{riskScore}%</Text>
-            <Text style={styles.riskLabel}>Health Risk Score</Text>
-            <Text style={styles.riskDescription}>
-              Your health indicators look great! Keep up the good work.
+            <Text style={[styles.riskScore, themed.riskScore]}>{riskScore}%</Text>
+            <Text style={[styles.riskLabel, themed.riskLabel]}>{t.home.riskScore}</Text>
+            <Text style={[styles.riskDescription, themed.riskDescription]}>
+              {riskLevel === 'Low Risk'
+                ? t.home.riskLowDesc
+                : t.home.riskHighDesc}
             </Text>
           </LinearGradient>
         </TouchableOpacity>
@@ -100,9 +148,9 @@ export default function HomeScreen() {
         {isGoogleFitConnected && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Today&apos;s Progress</Text>
+              <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.home.todayProgress}</Text>
               <TouchableOpacity onPress={() => router.push('/progress' as any)}>
-                <Text style={styles.sectionLink}>View All</Text>
+                <Text style={[styles.sectionLink, themed.sectionLink, { color: colors.primary }]}>{t.common.viewAll}</Text>
               </TouchableOpacity>
             </View>
 
@@ -112,19 +160,19 @@ export default function HomeScreen() {
                 const Icon = stat.icon;
 
                 return (
-                  <View key={index} style={styles.statCard}>
+                  <View key={index} style={[styles.statCard, themed.card]}>
                     <View style={[styles.statIconContainer, { backgroundColor: stat.color + '20' }]}>
                       <Icon size={24} color={stat.color} strokeWidth={2} />
                     </View>
-                    <Text style={styles.statValue}>
+                    <Text style={[styles.statValue, themed.statValue]}>
                       {stat.value}
-                      {stat.unit && <Text style={styles.statUnit}> {stat.unit}</Text>}
+                      {stat.unit && <Text style={[styles.statUnit, themed.statUnit]}> {stat.unit}</Text>}
                     </Text>
-                    <Text style={styles.statLabel}>{stat.label}</Text>
-                    <View style={styles.progressBar}>
+                    <Text style={[styles.statLabel, themed.statLabel]}>{stat.label}</Text>
+                    <View style={[styles.progressBar, { backgroundColor: colors.backgroundTertiary }]}>
                       <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: stat.color }]} />
                     </View>
-                    <Text style={styles.statGoal}>Goal: {stat.goal}</Text>
+                    <Text style={[styles.statGoal, themed.statGoal]}>{t.common.goal}: {stat.goal}</Text>
                   </View>
                 );
               })}
@@ -135,24 +183,24 @@ export default function HomeScreen() {
         {!isGoogleFitConnected && (
           <View style={styles.section}>
             <TouchableOpacity
-              style={styles.googleFitCard}
+              style={[styles.googleFitCard, { shadowColor: colors.cardShadow }]}
               activeOpacity={0.8}
               onPress={connectGoogleFit}
             >
               <LinearGradient
-                colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                colors={colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
                 style={styles.googleFitGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
                 <View style={styles.googleFitContent}>
                   <View style={styles.googleFitIconContainer}>
-                    <Link size={32} color={Colors.textWhite} strokeWidth={2} />
+                    <Link size={32} color={colors.textWhite} strokeWidth={2} />
                   </View>
                   <View style={styles.googleFitTextContainer}>
-                    <Text style={styles.googleFitTitle}>Connect to Google Fit</Text>
-                    <Text style={styles.googleFitDescription}>
-                      Connect to Google Fit to view your health data.
+                    <Text style={[styles.googleFitTitle, themed.googleFitTitle, { color: colors.textWhite }]}>{t.home.googleFit}</Text>
+                    <Text style={[styles.googleFitDescription, themed.googleFitDescription, { color: colors.textWhite }]}>
+                      {t.wellness.keepTracking}
                     </Text>
                   </View>
                 </View>
@@ -162,7 +210,7 @@ export default function HomeScreen() {
         )}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.home.quickActions}</Text>
           <View style={styles.featuresGrid}>
             {features.map((feature, index) => {
               const Icon = feature.icon;
@@ -175,13 +223,20 @@ export default function HomeScreen() {
                 >
                   <LinearGradient
                     colors={feature.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
-                    style={styles.featureGradient}
+                    style={[styles.featureGradient, { shadowColor: feature.gradient[0] }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    <Icon size={32} color={Colors.textWhite} strokeWidth={2} />
+                    <View style={styles.iconCircle}>
+                      <Icon size={24} color={feature.gradient[0]} strokeWidth={2.5} />
+                    </View>
+                    <View style={styles.featureInfo}>
+                      <Text style={styles.featureLabelInside}>{feature.label}</Text>
+                      <View style={styles.actionArrow}>
+                        <ChevronRight size={14} color="#FFFFFF" strokeWidth={3} />
+                      </View>
+                    </View>
                   </LinearGradient>
-                  <Text style={styles.featureLabel}>{feature.label}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -189,41 +244,41 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Rewards Summary</Text>
-          <View style={styles.rewardsCard}>
+          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.home.rewardsSummary}</Text>
+          <View style={[styles.rewardsCard, themed.card]}>
             <View style={styles.rewardsRow}>
               <View style={styles.rewardItem}>
-                <Text style={styles.rewardValue}>{rewardsPoints}</Text>
-                <Text style={styles.rewardLabel}>Points</Text>
+                <Text style={[styles.rewardValue, themed.rewardValue, { color: colors.primary }]}>{rewardsPoints}</Text>
+                <Text style={[styles.rewardLabel, themed.rewardLabel]}>{t.home.points}</Text>
               </View>
-              <View style={styles.rewardDivider} />
+              <View style={[styles.rewardDivider, { backgroundColor: colors.border }]} />
               <View style={styles.rewardItem}>
-                <Text style={styles.rewardValue}>{streak}</Text>
-                <Text style={styles.rewardLabel}>Streak</Text>
+                <Text style={[styles.rewardValue, themed.rewardValue, { color: colors.primary }]}>{streak}</Text>
+                <Text style={[styles.rewardLabel, themed.rewardLabel]}>{t.home.streak}</Text>
               </View>
-              <View style={styles.rewardDivider} />
+              <View style={[styles.rewardDivider, { backgroundColor: colors.border }]} />
               <View style={styles.rewardItem}>
-                <Text style={styles.rewardValue}>3</Text>
-                <Text style={styles.rewardLabel}>Badges</Text>
+                <Text style={[styles.rewardValue, themed.rewardValue, { color: colors.primary }]}>3</Text>
+                <Text style={[styles.rewardLabel, themed.rewardLabel]}>{t.home.badges}</Text>
               </View>
             </View>
             <TouchableOpacity
-              style={styles.rewardsButton}
+              style={[styles.rewardsButton, { backgroundColor: colors.primary }]}
               onPress={() => router.push('/(tabs)/rewards' as any)}
             >
-              <Text style={styles.rewardsButtonText}>View All Rewards</Text>
+              <Text style={[styles.rewardsButtonText, { color: colors.textWhite, fontSize: scale(14) }]}>{t.home.viewRewards}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Health Tips</Text>
-          <View style={styles.tipCard}>
-            <TrendingUp size={24} color={Colors.primary} strokeWidth={2} />
+          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.home.healthTips}</Text>
+          <View style={[styles.tipCard, themed.card]}>
+            <TrendingUp size={24} color={colors.primary} strokeWidth={2} />
             <View style={styles.tipContent}>
-              <Text style={styles.tipTitle}>Stay Hydrated</Text>
-              <Text style={styles.tipDescription}>
-                Drink at least 8 glasses of water daily to maintain optimal health and energy levels.
+              <Text style={[styles.tipTitle, themed.tipTitle]}>{t.home.tipStayHydrated}</Text>
+              <Text style={[styles.tipDescription, themed.tipDescription]}>
+                {t.home.tipStayHydratedDesc}
               </Text>
             </View>
           </View>
@@ -236,7 +291,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundSecondary,
   },
   scrollView: {
     flex: 1,
@@ -250,23 +304,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 20,
-    backgroundColor: Colors.background,
   },
   greeting: {
-    fontSize: 24,
     fontWeight: '700' as const,
-    color: Colors.text,
   },
   subtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
     marginTop: 4,
   },
   googleFitCard: {
     marginHorizontal: 0,
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
@@ -294,12 +342,12 @@ const styles = StyleSheet.create({
   googleFitTitle: {
     fontSize: 20,
     fontWeight: '700' as const,
-    color: Colors.textWhite,
+    color: '#ffffff',
     marginBottom: 8,
   },
   googleFitDescription: {
     fontSize: 14,
-    color: Colors.textWhite,
+    color: '#ffffff',
     opacity: 0.9,
     lineHeight: 20,
   },
@@ -308,7 +356,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
@@ -332,23 +379,23 @@ const styles = StyleSheet.create({
   riskBadgeText: {
     fontSize: 12,
     fontWeight: '700' as const,
-    color: Colors.textWhite,
+    color: '#ffffff',
   },
   riskScore: {
     fontSize: 48,
     fontWeight: '700' as const,
-    color: Colors.textWhite,
+    color: '#ffffff',
     marginBottom: 4,
   },
   riskLabel: {
     fontSize: 16,
-    color: Colors.textWhite,
+    color: '#ffffff',
     opacity: 0.9,
     marginBottom: 12,
   },
   riskDescription: {
     fontSize: 14,
-    color: Colors.textWhite,
+    color: '#ffffff',
     opacity: 0.8,
     lineHeight: 20,
   },
@@ -363,14 +410,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 20,
     fontWeight: '700' as const,
-    color: Colors.text,
   },
   sectionLink: {
     fontSize: 14,
     fontWeight: '600' as const,
-    color: Colors.primary,
+    color: '#007AFF', // Use a default since this is static, or can be dynamic via themed
   },
   statsGrid: {
     flexDirection: 'row',
@@ -379,11 +424,9 @@ const styles = StyleSheet.create({
   },
   statCard: {
     width: CARD_WIDTH,
-    backgroundColor: Colors.card,
     borderRadius: 16,
     padding: 16,
     margin: 6,
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -398,24 +441,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   statValue: {
-    fontSize: 24,
     fontWeight: '700' as const,
-    color: Colors.text,
     marginBottom: 4,
   },
   statUnit: {
-    fontSize: 14,
     fontWeight: '400' as const,
-    color: Colors.textSecondary,
   },
   statLabel: {
-    fontSize: 14,
-    color: Colors.textSecondary,
     marginBottom: 12,
   },
   progressBar: {
     height: 6,
-    backgroundColor: Colors.backgroundSecondary,
     borderRadius: 3,
     overflow: 'hidden',
     marginBottom: 8,
@@ -426,42 +462,65 @@ const styles = StyleSheet.create({
   },
   statGoal: {
     fontSize: 12,
-    color: Colors.textLight,
+    color: '#95A5A6',
   },
   featuresGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -6,
+    marginHorizontal: -8,
   },
   featureCard: {
-    width: CARD_WIDTH,
-    alignItems: 'center',
-    margin: 6,
+    width: (width - 56) / 2,
+    margin: 8,
+    borderRadius: 24,
+    overflow: 'hidden',
   },
   featureGradient: {
-    width: '100%',
+    padding: 20,
     aspectRatio: 1,
-    borderRadius: 16,
+    justifyContent: 'space-between',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  iconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: Colors.cardShadow,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
     elevation: 4,
   },
-  featureLabel: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.text,
-    textAlign: 'center',
+  featureInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  featureLabelInside: {
+    fontSize: 15,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    flex: 1,
+    marginRight: 8,
+    letterSpacing: -0.2,
+  },
+  actionArrow: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rewardsCard: {
-    backgroundColor: Colors.card,
     borderRadius: 16,
     padding: 20,
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -478,19 +537,15 @@ const styles = StyleSheet.create({
   rewardValue: {
     fontSize: 28,
     fontWeight: '700' as const,
-    color: Colors.primary,
     marginBottom: 4,
   },
   rewardLabel: {
     fontSize: 14,
-    color: Colors.textSecondary,
   },
   rewardDivider: {
     width: 1,
-    backgroundColor: Colors.border,
   },
   rewardsButton: {
-    backgroundColor: Colors.primary,
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
@@ -498,14 +553,11 @@ const styles = StyleSheet.create({
   rewardsButtonText: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: Colors.textWhite,
   },
   tipCard: {
     flexDirection: 'row',
-    backgroundColor: Colors.card,
     borderRadius: 16,
     padding: 16,
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -518,12 +570,10 @@ const styles = StyleSheet.create({
   tipTitle: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: Colors.text,
     marginBottom: 4,
   },
   tipDescription: {
     fontSize: 14,
-    color: Colors.textSecondary,
     lineHeight: 20,
   },
 });
