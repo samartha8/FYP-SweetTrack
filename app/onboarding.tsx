@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Animated, ColorValue } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Animated, ColorValue, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Activity, Heart, MessageCircle, Camera, TrendingUp } from 'lucide-react-native';
@@ -20,8 +20,8 @@ type OnboardingSlide = {
 const slides: OnboardingSlide[] = [
   {
     id: 1,
-    title: 'Upload & Track Health Data',
-    description: 'Easily upload your health records and track key metrics like glucose, blood pressure, and BMI in one place.',
+    title: 'Track Your Health Journey',
+    description: 'Monitor your health metrics like glucose, blood pressure, and BMI with easy-to-use logging tools and visual progress tracking.',
     icon: Activity,
     gradient: Colors.gradient.primary,
   },
@@ -137,7 +137,15 @@ export default function OnboardingScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <slide.icon size={80} color={Colors.textWhite} strokeWidth={1.5} />
+              {slide.id === 1 ? (
+                <Image
+                  source={require('@/assets/branding/logo.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              ) : (
+                <slide.icon size={80} color={Colors.textWhite} strokeWidth={1.5} />
+              )}
             </LinearGradient>
 
             <Text style={styles.title}>{slide.title}</Text>
@@ -212,6 +220,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 8,
+  },
+  logo: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
   },
   title: {
     fontSize: 28,
