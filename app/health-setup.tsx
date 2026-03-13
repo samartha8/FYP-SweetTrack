@@ -3,6 +3,7 @@ import { useUser } from '@/contexts/UserContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ChevronRight, Info } from 'lucide-react-native';
+import { HEALTH_URL, DIABETES_URL } from '../constants/Api';
 import { useState } from 'react';
 import {
   ColorValue,
@@ -15,8 +16,10 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from '@/hooks/use-translation';
 
 
 type HealthFormData = {
@@ -26,6 +29,7 @@ type HealthFormData = {
   height: string;           // cm - for BMI calculation
   weight: string;           // kg - for BMI calculation
   bmi?: string;             // Computed or manual (12-98)
+  pregnancies?: string;     // Number of pregnancies (0-20)
 
   // Medical Measurements
   highBP: string;           // High blood pressure (0/1)
@@ -46,18 +50,18 @@ type HealthFormData = {
 
 type Step = 'features' | 'personal' | 'lifestyle' | 'medical' | 'review';
 
-const featureHighlights = [
-  { title: 'BMI (Body Mass Index)', description: 'Automatically calculated from height and weight. Range: 12-98.' },
-  { title: 'Age Category', description: 'Age groups from 18-24 to 80+. Used for age-adjusted risk scoring.' },
-  { title: 'High Blood Pressure', description: 'Indicator of hypertension status (Yes/No).' },
-  { title: 'High Cholesterol', description: 'Indicator of high cholesterol levels (Yes/No).' },
-  { title: 'Smoking History', description: 'Have you smoked at least 100 cigarettes in your lifetime? (Yes/No).' },
-  { title: 'Physical Activity', description: 'Any physical activity in past 30 days excluding work (Yes/No).' },
-  { title: 'Heart Disease History', description: 'History of coronary heart disease or heart attack (Yes/No).' },
-  { title: 'General Health', description: 'Self-rated health status from Excellent to Poor (1-5 scale).' },
-  { title: 'Gender', description: 'Biological sex for demographic analysis (Male/Female).' },
-  { title: 'HbA1c (Estimated)', description: 'Estimated 3-month average blood sugar (auto-calculated or manual entry).' },
-  { title: 'Blood Glucose (Estimated)', description: 'Estimated fasting blood glucose (auto-calculated or manual entry).' },
+const getFeatureHighlights = (t: any) => [
+  { title: t.healthSetup.fields.bmi, description: 'Automatically calculated from height and weight. Range: 12-98.' },
+  { title: t.healthSetup.fields.age, description: 'Age groups from 18-24 to 80+. Used for age-adjusted risk scoring.' },
+  { title: t.healthSetup.fields.highBP, description: t.healthSetup.fields.highBPDesc },
+  { title: t.healthSetup.fields.highChol, description: t.healthSetup.fields.highCholDesc },
+  { title: t.healthSetup.fields.smoker, description: t.healthSetup.fields.smokerDesc },
+  { title: t.healthSetup.fields.physActivity, description: t.healthSetup.fields.physActivityDesc },
+  { title: t.healthSetup.fields.heartDisease, description: t.healthSetup.fields.heartDiseaseDesc },
+  { title: t.healthSetup.fields.genHlth, description: t.healthSetup.fields.genHlthDesc },
+  { title: t.healthSetup.fields.sex, description: 'Biological sex for demographic analysis (Male/Female).' },
+  { title: t.healthSetup.fields.hba1c, description: 'Estimated 3-month average blood sugar (auto-calculated or manual entry).' },
+  { title: t.healthSetup.fields.glucose, description: 'Estimated fasting blood glucose (auto-calculated or manual entry).' },
 ];
 
 export default function HealthSetupScreen() {
@@ -65,6 +69,7 @@ export default function HealthSetupScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, updateUser, completeHealthSetup, ensureAccessToken } = useUser();
+  const { t } = useTranslation();
 
   const [currentStep, setCurrentStep] = useState<Step>('features');
   const [isLoading, setIsLoading] = useState(false);
@@ -83,14 +88,15 @@ export default function HealthSetupScreen() {
     heartDiseaseOrAttack: '',
     hba1cEstimated: '',
     bloodGlucoseEstimated: '',
+    pregnancies: '0',
   });
 
   const steps: { key: Step; title: string; description: string }[] = [
-    { key: 'features', title: 'Top Health Priorities', description: 'Review the 11 essentials we track after signup' },
-    { key: 'personal', title: 'Personal Information', description: 'Age, gender and BMI for baseline risk' },
-    { key: 'lifestyle', title: 'Lifestyle', description: 'Smoking and physical activity habits' },
-    { key: 'medical', title: 'Medical Measurements', description: 'Blood pressure, cholesterol and health status' },
-    { key: 'review', title: 'Review & Submit', description: 'Quick summary before saving' },
+    { key: 'features', title: t.healthSetup.steps.features, description: t.healthSetup.steps.featuresDesc },
+    { key: 'personal', title: t.healthSetup.steps.personal, description: t.healthSetup.steps.personalDesc },
+    { key: 'lifestyle', title: t.healthSetup.steps.lifestyle, description: t.healthSetup.steps.lifestyleDesc },
+    { key: 'medical', title: t.healthSetup.steps.medical, description: t.healthSetup.steps.medicalDesc },
+    { key: 'review', title: t.healthSetup.steps.review, description: t.healthSetup.steps.reviewDesc },
   ];
 
   const currentStepIndex = steps.findIndex(s => s.key === currentStep);
@@ -102,8 +108,8 @@ export default function HealthSetupScreen() {
 
       // Calculate BMI if height or weight change
       if (field === 'height' || field === 'weight') {
-        const h = parseFloat(field === 'height' ? value : next.height);
-        const w = parseFloat(field === 'weight' ? value : next.weight);
+        const h = parseFloat(field === 'height' ? value : next.height || '0');
+        const w = parseFloat(field === 'weight' ? value : next.weight || '0');
 
         if (!Number.isNaN(h) && !Number.isNaN(w) && h > 0 && w > 0) {
           const hMeters = h / 100;
@@ -160,7 +166,8 @@ export default function HealthSetupScreen() {
         return !!(
           formData.age && ageNum >= 1 && ageNum <= 13 &&
           formData.sex && (sexNum === 0 || sexNum === 1) &&
-          ((formData.height && formData.weight) || (bmiNum >= 12 && bmiNum <= 98))
+          ((formData.height && formData.weight) || (bmiNum >= 12 && bmiNum <= 98)) &&
+          (sexNum === 1 || (formData.pregnancies !== undefined && parseInt(formData.pregnancies) >= 0))
         );
       case 'lifestyle':
         // Require smoker (0/1), physActivity (0/1)
@@ -234,15 +241,13 @@ export default function HealthSetupScreen() {
         // Engineered
         hba1cEstimated: formData.hba1cEstimated ? parseFloat(formData.hba1cEstimated) : undefined,
         bloodGlucoseEstimated: formData.bloodGlucoseEstimated ? parseFloat(formData.bloodGlucoseEstimated) : undefined,
+        pregnancies: formData.sex === '0' ? parseInt(formData.pregnancies || '0', 10) : 0,
       };
 
       // 1. Save to Backend (Crucial for persistence)
       try {
         const token = await ensureAccessToken();
-        const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5000';
-
-        console.log("Saving health data to backend...");
-        const saveRes = await fetch(`${API_URL}/api/health`, {
+        const saveRes = await fetch(HEALTH_URL, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token || ''}`,
@@ -278,25 +283,52 @@ export default function HealthSetupScreen() {
 
       // Trigger initial prediction
       try {
+        console.log("Attempting initial prediction with data:", JSON.stringify(healthData, null, 2));
         const token = await ensureAccessToken();
-        const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5000';
+        const predictionBody = {
+          ...healthData,
+          // Explicitly map fields to match python script/controller expectations if needed
+          HighBP: healthData.highBP,
+          HighChol: healthData.highChol,
+          CholCheck: 1, // Assume check done if they know status? Or default 1
+          BMI: healthData.bmi,
+          Smoker: healthData.smoker,
+          Stroke: 0, // Default for new users?
+          HeartDiseaseorAttack: healthData.heartDiseaseOrAttack,
+          PhysActivity: healthData.physActivity,
+          Fruits: 1, // Defaults
+          Veggies: 1, // Defaults
+          HvyAlcoholConsump: 0, // Defaults
+          AnyHealthcare: 1, // Defaults
+          NoDocbcCost: 0, // Defaults
+          GenHlth: healthData.genHlth,
+          MentHlth: 0, // Defaults
+          PhysHlth: 0, // Defaults
+          DiffWalk: 0, // Defaults
+          Sex: healthData.sex,
+          Age: healthData.age,
+          Education: 5, // Defaults
+          Income: 6, // Defaults
+          Glucose: healthData.bloodGlucoseEstimated || 85 // Fallback if empty
+        };
 
-        console.log("Triggering prediction with data:", JSON.stringify(healthData));
-        const res = await fetch(`${API_URL}/api/diabetes/predict`, {
+        const res = await fetch(`${DIABETES_URL}/predict`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token || ''}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            ...healthData,
-            glucose: healthData.bloodGlucoseEstimated // Ensure key consistency
-          })
+          body: JSON.stringify(predictionBody)
         });
+
         const resJson = await res.json();
-        console.log("Prediction response:", resJson);
+        console.log("Initial Prediction Result:", resJson);
+
+        if (resJson.success) {
+          // Optional: Show a toast or small alert that analysis is ready
+        }
       } catch (e) {
-        console.log("Initial prediction failed", e);
+        console.error("Initial prediction failed:", e);
       }
 
       router.replace('/(tabs)/home' as any);
@@ -314,12 +346,12 @@ export default function HealthSetupScreen() {
       <View style={styles.infoCard}>
         <Info size={20} color={Colors.primary} />
         <Text style={styles.infoText}>
-          First-time users see the exact health signals SweetTrack tracks to personalize diabetes prevention.
+          {t.healthSetup.description}
         </Text>
       </View>
 
       <View style={styles.featuresGrid}>
-        {featureHighlights.map((feature, index) => (
+        {getFeatureHighlights(t).map((feature, index) => (
           <View key={feature.title} style={styles.featureCard}>
             <View style={styles.featureBadge}>
               <Text style={styles.featureBadgeText}>{index + 1}</Text>
@@ -334,7 +366,7 @@ export default function HealthSetupScreen() {
 
       <View style={styles.infoFooter}>
         <Text style={styles.infoFooterText}>
-          Continue to fill in your details so we can tailor recommendations using these 11 signals.
+          {t.healthSetup.description}
         </Text>
       </View>
     </View>
@@ -351,8 +383,8 @@ export default function HealthSetupScreen() {
 
       {/* Age Category */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Age Category <Text style={styles.required}>*</Text></Text>
-        <Text style={styles.sublabel}>Select your age group</Text>
+        <Text style={styles.label}>{t.healthSetup.fields.age} <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>{t.healthSetup.fields.ageDesc}</Text>
         <View style={styles.radioGroup}>
           {[
             { value: '1', label: '18-24' },
@@ -392,11 +424,11 @@ export default function HealthSetupScreen() {
 
       {/* Gender */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Gender <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.label}>{t.healthSetup.fields.sex} <Text style={styles.required}>*</Text></Text>
         <View style={styles.radioGroup}>
           {[
-            { value: '0', label: 'Female' },
-            { value: '1', label: 'Male' },
+            { value: '0', label: t.healthSetup.fields.female },
+            { value: '1', label: t.healthSetup.fields.male },
           ].map((option) => (
             <TouchableOpacity
               key={option.value}
@@ -420,10 +452,28 @@ export default function HealthSetupScreen() {
         </View>
       </View>
 
+      {/* Pregnancies (Conditional for Female) */}
+      {formData.sex === '0' && (
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>{t.healthSetup.fields.pregnancies} <Text style={styles.required}>*</Text></Text>
+          <Text style={styles.sublabel}>{t.healthSetup.fields.pregnanciesDesc}</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g., 0, 1, 2"
+            placeholderTextColor={Colors.textLight}
+            value={formData.pregnancies}
+            onChangeText={(text) => updateField('pregnancies', text.replace(/[^0-9]/g, ''))}
+            keyboardType="number-pad"
+            maxLength={2}
+          />
+          <Text style={styles.helperText}>{t.healthSetup.fields.pregnanciesDesc}</Text>
+        </View>
+      )}
+
       {/* Height and Weight */}
       <View style={styles.row}>
         <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-          <Text style={styles.label}>Height (cm) <Text style={styles.required}>*</Text></Text>
+          <Text style={styles.label}>{t.healthSetup.fields.height} <Text style={styles.required}>*</Text></Text>
           <TextInput
             style={[styles.input, { width: '100%' }]}
             placeholder="e.g., 175"
@@ -434,7 +484,7 @@ export default function HealthSetupScreen() {
           />
         </View>
         <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-          <Text style={styles.label}>Weight (kg) <Text style={styles.required}>*</Text></Text>
+          <Text style={styles.label}>{t.healthSetup.fields.weight} <Text style={styles.required}>*</Text></Text>
           <TextInput
             style={[styles.input, { width: '100%' }]}
             placeholder="e.g., 70"
@@ -449,7 +499,7 @@ export default function HealthSetupScreen() {
       {/* BMI Display */}
       {formData.bmi && (
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>BMI (Calculated)</Text>
+          <Text style={styles.label}>{t.healthSetup.fields.bmi}</Text>
           <View style={[styles.input, { backgroundColor: Colors.primaryLight + '20', borderColor: Colors.primary }]}>
             <Text style={{ fontSize: 16, color: Colors.text, fontWeight: '700' }}>
               {formData.bmi}
@@ -476,12 +526,12 @@ export default function HealthSetupScreen() {
 
       {/* Smoking History */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Smoking History <Text style={styles.required}>*</Text></Text>
-        <Text style={styles.sublabel}>Have you smoked at least 100 cigarettes in your lifetime?</Text>
+        <Text style={styles.label}>{t.healthSetup.fields.smoker} <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>{t.healthSetup.fields.smokerDesc}</Text>
         <View style={styles.radioGroup}>
           {[
-            { value: '0', label: 'No' },
-            { value: '1', label: 'Yes' },
+            { value: '0', label: t.healthSetup.no },
+            { value: '1', label: t.healthSetup.yes },
           ].map((option) => (
             <TouchableOpacity
               key={option.value}
@@ -510,14 +560,14 @@ export default function HealthSetupScreen() {
 
       {/* Physical Activity */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Physical Activity <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.label}>{t.healthSetup.fields.physActivity} <Text style={styles.required}>*</Text></Text>
         <Text style={styles.sublabel}>
-          Any physical activity in past 30 days? (Not including job)
+          {t.healthSetup.fields.physActivityDesc}
         </Text>
         <View style={styles.radioGroup}>
           {[
-            { value: '0', label: 'No' },
-            { value: '1', label: 'Yes' },
+            { value: '0', label: t.healthSetup.no },
+            { value: '1', label: t.healthSetup.yes },
           ].map((option) => (
             <TouchableOpacity
               key={option.value}
@@ -557,12 +607,12 @@ export default function HealthSetupScreen() {
 
       {/* High Blood Pressure */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>High Blood Pressure <Text style={styles.required}>*</Text></Text>
-        <Text style={styles.sublabel}>Have you been told you have high blood pressure?</Text>
+        <Text style={styles.label}>{t.healthSetup.fields.highBP} <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>{t.healthSetup.fields.highBPDesc}</Text>
         <View style={styles.radioGroup}>
           {[
-            { value: '0', label: 'No' },
-            { value: '1', label: 'Yes' },
+            { value: '0', label: t.healthSetup.no },
+            { value: '1', label: t.healthSetup.yes },
           ].map((option) => (
             <TouchableOpacity
               key={option.value}
@@ -588,12 +638,12 @@ export default function HealthSetupScreen() {
 
       {/* High Cholesterol */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>High Cholesterol <Text style={styles.required}>*</Text></Text>
-        <Text style={styles.sublabel}>Have you been told you have high cholesterol?</Text>
+        <Text style={styles.label}>{t.healthSetup.fields.highChol} <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>{t.healthSetup.fields.highCholDesc}</Text>
         <View style={styles.radioGroup}>
           {[
-            { value: '0', label: 'No' },
-            { value: '1', label: 'Yes' },
+            { value: '0', label: t.healthSetup.no },
+            { value: '1', label: t.healthSetup.yes },
           ].map((option) => (
             <TouchableOpacity
               key={option.value}
@@ -619,15 +669,15 @@ export default function HealthSetupScreen() {
 
       {/* General Health */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>General Health <Text style={styles.required}>*</Text></Text>
-        <Text style={styles.sublabel}>How would you rate your general health?</Text>
+        <Text style={styles.label}>{t.healthSetup.fields.genHlth} <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.sublabel}>{t.healthSetup.fields.genHlthDesc}</Text>
         <View style={styles.radioGroup}>
           {[
-            { value: '1', label: 'Excellent' },
-            { value: '2', label: 'Very Good' },
-            { value: '3', label: 'Good' },
-            { value: '4', label: 'Fair' },
-            { value: '5', label: 'Poor' },
+            { value: '1', label: t.healthSetup.genHlthLevels[1] },
+            { value: '2', label: t.healthSetup.genHlthLevels[2] },
+            { value: '3', label: t.healthSetup.genHlthLevels[3] },
+            { value: '4', label: t.healthSetup.genHlthLevels[4] },
+            { value: '5', label: t.healthSetup.genHlthLevels[5] },
           ].map((option) => (
             <TouchableOpacity
               key={option.value}
@@ -652,14 +702,14 @@ export default function HealthSetupScreen() {
 
       {/* Heart Disease History */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Heart Disease History <Text style={styles.required}>*</Text></Text>
+        <Text style={styles.label}>{t.healthSetup.fields.heartDisease} <Text style={styles.required}>*</Text></Text>
         <Text style={styles.sublabel}>
-          Ever been told you had coronary heart disease or heart attack?
+          {t.healthSetup.fields.heartDiseaseDesc}
         </Text>
         <View style={styles.radioGroup}>
           {[
-            { value: '0', label: 'No' },
-            { value: '1', label: 'Yes' },
+            { value: '0', label: t.healthSetup.no },
+            { value: '1', label: t.healthSetup.yes },
           ].map((option) => (
             <TouchableOpacity
               key={option.value}
@@ -686,7 +736,7 @@ export default function HealthSetupScreen() {
       {/* HbA1c Estimated (Auto-calculated) */}
       {formData.hba1cEstimated && (
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Estimated HbA1c <Text style={styles.optional}>(Auto-calculated)</Text></Text>
+          <Text style={styles.label}>{t.healthSetup.fields.hba1c} <Text style={styles.optional}>(Auto-calculated)</Text></Text>
           <View style={[styles.input, { backgroundColor: Colors.primaryLight + '20', borderColor: Colors.primary }]}>
             <Text style={{ fontSize: 16, color: Colors.text, fontWeight: '700' }}>
               {parseFloat(formData.hba1cEstimated).toFixed(2)}%
@@ -703,7 +753,7 @@ export default function HealthSetupScreen() {
       {/* Blood Glucose Estimated (Auto-calculated) */}
       {formData.bloodGlucoseEstimated && (
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Estimated Blood Glucose <Text style={styles.optional}>(Auto-calculated)</Text></Text>
+          <Text style={styles.label}>{t.healthSetup.fields.glucose} <Text style={styles.optional}>(Auto-calculated)</Text></Text>
           <View style={[styles.input, { backgroundColor: Colors.primaryLight + '20', borderColor: Colors.primary }]}>
             <Text style={{ fontSize: 16, color: Colors.text, fontWeight: '700' }}>
               {parseFloat(formData.bloodGlucoseEstimated).toFixed(1)} mg/dL
@@ -735,35 +785,40 @@ export default function HealthSetupScreen() {
         <View style={styles.infoCard}>
           <Info size={20} color={Colors.primary} />
           <Text style={styles.infoText}>
-            Review your information before submitting. All data is used for diabetes risk prediction.
+            {t.healthSetup.steps.reviewDesc}
           </Text>
         </View>
 
         {/* Personal Info Summary */}
         <View style={[styles.featureCard, { marginBottom: 16 }]}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.featureTitle}>Personal Information</Text>
+            <Text style={styles.featureTitle}>{t.healthSetup.steps.personal}</Text>
             <Text style={styles.featureDescription}>
-              Age: {ageLabels[formData.age] || formData.age}
+              {t.healthSetup.fields.age}: {formData.age}
             </Text>
             <Text style={styles.featureDescription}>
-              Gender: {formData.sex === '0' ? 'Female' : 'Male'}
+              {t.healthSetup.fields.sex}: {formData.sex === '0' ? t.healthSetup.fields.female : t.healthSetup.fields.male}
             </Text>
             <Text style={styles.featureDescription}>
-              BMI: {formData.bmi}
+              {t.healthSetup.fields.bmi}: {formData.bmi}
             </Text>
+            {formData.sex === '0' && (
+              <Text style={styles.featureDescription}>
+                {t.healthSetup.fields.pregnancies}: {formData.pregnancies || '0'}
+              </Text>
+            )}
           </View>
         </View>
 
         {/* Lifestyle Summary */}
         <View style={[styles.featureCard, { marginBottom: 16 }]}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.featureTitle}>Lifestyle</Text>
+            <Text style={styles.featureTitle}>{t.healthSetup.steps.lifestyle}</Text>
             <Text style={styles.featureDescription}>
-              Smoking History: {formData.smoker === '1' ? 'Yes' : 'No'}
+              {t.healthSetup.fields.smoker}: {formData.smoker === '1' ? t.healthSetup.yes : t.healthSetup.no}
             </Text>
             <Text style={styles.featureDescription}>
-              Physical Activity: {formData.physActivity === '1' ? 'Yes' : 'No'}
+              {t.healthSetup.fields.physActivity}: {formData.physActivity === '1' ? t.healthSetup.yes : t.healthSetup.no}
             </Text>
           </View>
         </View>
@@ -771,27 +826,27 @@ export default function HealthSetupScreen() {
         {/* Medical Summary */}
         <View style={[styles.featureCard, { marginBottom: 16 }]}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.featureTitle}>Medical Information</Text>
+            <Text style={styles.featureTitle}>{t.healthSetup.steps.medical}</Text>
             <Text style={styles.featureDescription}>
-              High Blood Pressure: {formData.highBP === '1' ? 'Yes' : 'No'}
+              {t.healthSetup.fields.highBP}: {formData.highBP === '1' ? t.healthSetup.yes : t.healthSetup.no}
             </Text>
             <Text style={styles.featureDescription}>
-              High Cholesterol: {formData.highChol === '1' ? 'Yes' : 'No'}
+              {t.healthSetup.fields.highChol}: {formData.highChol === '1' ? t.healthSetup.yes : t.healthSetup.no}
             </Text>
             <Text style={styles.featureDescription}>
-              General Health: {genHlthLabels[formData.genHlth] || formData.genHlth}
+              {t.healthSetup.fields.genHlth}: {t.healthSetup.genHlthLevels[formData.genHlth as unknown as 1 | 2 | 3 | 4 | 5] || formData.genHlth}
             </Text>
             <Text style={styles.featureDescription}>
-              Heart Disease History: {formData.heartDiseaseOrAttack === '1' ? 'Yes' : 'No'}
+              {t.healthSetup.fields.heartDisease}: {formData.heartDiseaseOrAttack === '1' ? t.healthSetup.yes : t.healthSetup.no}
             </Text>
             {formData.hba1cEstimated && (
               <Text style={styles.featureDescription}>
-                Estimated HbA1c: {parseFloat(formData.hba1cEstimated).toFixed(2)}%
+                {t.healthSetup.fields.hba1c}: {parseFloat(formData.hba1cEstimated).toFixed(2)}%
               </Text>
             )}
             {formData.bloodGlucoseEstimated && (
               <Text style={styles.featureDescription}>
-                Estimated Blood Glucose: {parseFloat(formData.bloodGlucoseEstimated).toFixed(1)} mg/dL
+                {t.healthSetup.fields.glucose}: {parseFloat(formData.bloodGlucoseEstimated).toFixed(1)} mg/dL
               </Text>
             )}
           </View>
@@ -816,11 +871,11 @@ export default function HealthSetupScreen() {
             disabled={currentStep === 'features'}
           >
             {currentStep !== 'features' && (
-              <Text style={styles.backText}>← Back</Text>
+              <Text style={styles.backText}>← {t.healthSetup.back}</Text>
             )}
           </TouchableOpacity>
           <Text style={styles.stepIndicator}>
-            Step {currentStepIndex + 1} of {steps.length}
+            {t.healthSetup.step} {currentStepIndex + 1} {t.healthSetup.of} {steps.length}
           </Text>
         </View>
 
@@ -864,10 +919,19 @@ export default function HealthSetupScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              <Text style={styles.buttonPrimaryText}>
-                {isLoading ? 'Saving...' : currentStep === 'review' ? 'Submit' : 'Continue'}
-              </Text>
-              {!isLoading && <ChevronRight size={20} color={Colors.textWhite} />}
+              {isLoading ? (
+                <>
+                  <ActivityIndicator size="small" color={Colors.textWhite} style={{ marginRight: 8 }} />
+                  <Text style={styles.buttonPrimaryText}>{t.healthSetup.saving}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.buttonPrimaryText}>
+                    {currentStep === 'review' ? t.healthSetup.submit : t.healthSetup.continue}
+                  </Text>
+                  <ChevronRight size={20} color={Colors.textWhite} />
+                </>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </View>
