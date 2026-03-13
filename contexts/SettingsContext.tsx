@@ -2,8 +2,10 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useUser } from './UserContext';
+import { SETTINGS_URL } from '../constants/Api';
+import BaseColors from '@/constants/colors';
 
-export type Language = 'en' | 'ne' | 'hi';
+export type Language = 'en' | 'ne' | 'ja';
 
 export type Settings = {
   language: Language;
@@ -46,28 +48,61 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const { ensureAccessToken } = useUser();
 
-  const API_URL = useMemo(() => {
-    return process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:5000';
-  }, []);
+  // Dynamic Theme Generation
+  const theme = useMemo(() => {
+    if (settings.highContrast) {
+      return {
+        ...BaseColors,
+        primary: '#FFD60A',
+        text: '#FFFFFF',
+        textSecondary: '#E5E7EB',
+        textLight: '#D1D5DB',
+        background: '#000000',
+        backgroundSecondary: '#0F172A',
+        border: '#374151',
+        card: '#111827',
+        cardShadow: 'rgba(255, 255, 255, 0.18)',
+        // Ensure other colors remain available
+      };
+    }
+    return BaseColors;
+  }, [settings.highContrast]);
+
+  // Font Scaling
+  const scale = useMemo(() => {
+    const fontScale = { small: 0.9, medium: 1, large: 1.15 }[settings.fontSize] || 1;
+    return (size: number) => Math.round(size * fontScale);
+  }, [settings.fontSize]);
 
   const loadSettings = useCallback(async () => {
     try {
-      // 1. Load from Local Cache first (Fast UI)
+      // 1. Load from Local Cache first
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
       if (stored) {
         setSettings(JSON.parse(stored));
       }
 
-      // 2. Load from Backend (Source of Truth)
-      const token = await ensureAccessToken();
+      // 2. Load from Backend with Retry Logic
+      let token = await ensureAccessToken();
       if (token) {
-        const response = await fetch(`${API_URL}/api/settings`, {
+        let response = await fetch(SETTINGS_URL, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
+
+        // Retry on 401
+        if (response.status === 401) {
+          console.log('Settings load: Token expired, refreshing...');
+          token = await ensureAccessToken(true);
+          if (token) {
+            response = await fetch(SETTINGS_URL, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+          }
+        }
+
         const json = await response.json();
         if (json.success && json.settings) {
           const remoteSettings = json.settings;
-          // Merge to avoid losing local-only fields if any
           const merged = { ...DEFAULT_SETTINGS, ...remoteSettings };
           setSettings(merged);
           await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
@@ -78,7 +113,7 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     } finally {
       setIsLoading(false);
     }
-  }, [ensureAccessToken, API_URL]);
+  }, [ensureAccessToken]);
 
   useEffect(() => {
     loadSettings();
@@ -89,13 +124,11 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     setSettings(newSettings); // Optimistic UI
 
     try {
-      // Save Local
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
 
-      // Save Backend
-      const token = await ensureAccessToken();
+      let token = await ensureAccessToken();
       if (token) {
-        await fetch(`${API_URL}/api/settings`, {
+        let response = await fetch(SETTINGS_URL, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -103,54 +136,68 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
           },
           body: JSON.stringify(updates)
         });
+
+        // Retry on 401
+        if (response.status === 401) {
+          console.log('Settings update: Token expired, refreshing...');
+          token = await ensureAccessToken(true);
+          if (token) {
+            await fetch(SETTINGS_URL, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(updates)
+            });
+          }
+        }
       }
     } catch (error) {
       console.error('Error updating settings:', error);
     }
-  }, [settings, ensureAccessToken, API_URL]);
+  }, [settings, ensureAccessToken]);
 
-  const toggleHighContrast = useCallback(async () => {
-    await updateSettings({ highContrast: !settings.highContrast });
-  }, [settings.highContrast, updateSettings]);
-
-  const setLanguage = useCallback(async (language: Language) => {
-    await updateSettings({ language });
-  }, [updateSettings]);
-
-  const setFontSize = useCallback(async (fontSize: 'small' | 'medium' | 'large') => {
-    await updateSettings({ fontSize });
-  }, [updateSettings]);
-
-  const updateNotifications = useCallback(async (notifications: Partial<Settings['notifications']>) => {
-    const newNotifications = { ...settings.notifications, ...notifications };
-    await updateSettings({ notifications: newNotifications });
-  }, [settings.notifications, updateSettings]);
-
-  const updateAccessibility = useCallback(async (accessibility: Partial<Settings['accessibility']>) => {
-    const newAccessibility = { ...settings.accessibility, ...accessibility };
-    await updateSettings({ accessibility: newAccessibility });
-  }, [settings.accessibility, updateSettings]);
+  const toggleHighContrast = useCallback(() => updateSettings({ highContrast: !settings.highContrast }), [settings.highContrast, updateSettings]);
+  const setLanguage = useCallback((language: Language) => updateSettings({ language }), [updateSettings]);
+  const setFontSize = useCallback((fontSize: 'small' | 'medium' | 'large') => updateSettings({ fontSize }), [updateSettings]);
+  const updateNotifications = useCallback((notifications: Partial<Settings['notifications']>) =>
+    updateSettings({ notifications: { ...settings.notifications, ...notifications } }), [settings.notifications, updateSettings]);
+  const updateAccessibility = useCallback((accessibility: Partial<Settings['accessibility']>) =>
+    updateSettings({ accessibility: { ...settings.accessibility, ...accessibility } }), [settings.accessibility, updateSettings]);
 
   const resetSettings = useCallback(async () => {
     try {
       setSettings(DEFAULT_SETTINGS);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_SETTINGS));
 
-      const token = await ensureAccessToken();
+      let token = await ensureAccessToken();
       if (token) {
-        await fetch(`${API_URL}/api/settings/reset`, {
+        let response = await fetch(`${SETTINGS_URL}/reset`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` }
         });
+
+        if (response.status === 401) {
+          token = await ensureAccessToken(true);
+          if (token) {
+            await fetch(`${SETTINGS_URL}/reset`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+          }
+        }
       }
     } catch (error) {
       console.error('Error resetting settings:', error);
     }
-  }, [ensureAccessToken, API_URL]);
+  }, [ensureAccessToken]);
 
   return useMemo(() => ({
     settings,
     isLoading,
+    colors: theme, // Expose dynamic colors
+    scale,         // Expose font scaler
     updateSettings,
     toggleHighContrast,
     setLanguage,
@@ -161,6 +208,8 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
   }), [
     settings,
     isLoading,
+    theme,
+    scale,
     updateSettings,
     toggleHighContrast,
     setLanguage,
@@ -170,3 +219,9 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     resetSettings,
   ]);
 });
+
+// Helper hook for simpler consumption
+export const useTheme = () => {
+  const { colors, scale, settings } = useSettings();
+  return { colors, scale, isHighContrast: settings.highContrast, fontSize: settings.fontSize };
+};
