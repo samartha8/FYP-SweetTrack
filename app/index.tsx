@@ -9,6 +9,7 @@ export default function IndexScreen() {
   const { isLoading, hasOnboarded, hasHealthSetup, user } = useUser();
 
   useEffect(() => {
+    console.log('🚀 Index: isLoading:', isLoading, 'hasOnboarded:', hasOnboarded, 'user:', user?.email);
     if (!isLoading) {
       // Priority 1: If user is logged in, they've already seen onboarding (via login screen)
       // Skip onboarding check if user exists
