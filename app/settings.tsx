@@ -1,5 +1,5 @@
 import Colors from '@/constants/colors';
-import { Language, useSettings } from '@/contexts/SettingsContext';
+import { Language, useSettings, Settings } from '@/contexts/SettingsContext';
 import { useUser } from '@/contexts/UserContext';
 import { Stack, useRouter } from 'expo-router';
 import {
@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from '@/hooks/use-translation';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -23,19 +24,43 @@ export default function SettingsScreen() {
   const [isRegisteringPush, setRegisteringPush] = useState<boolean>(false);
   const {
     settings,
-    toggleHighContrast,
-    setLanguage,
-    setFontSize,
-    updateNotifications,
-    updateAccessibility,
+    colors: palette,
+    scale,
+    updateSettings,
     resetSettings,
   } = useSettings();
   const { registerPushNotifications, ensureAccessToken } = useUser();
 
+  // Local state for pending changes
+  const [pendingSettings, setPendingSettings] = useState<Settings | null>(null);
+
+  // Sync with global settings on initial load
+  useEffect(() => {
+    if (settings && !pendingSettings) {
+      setPendingSettings(settings);
+    }
+  }, [settings]);
+
+  const hasPendingChanges = useMemo(() => {
+    if (!settings || !pendingSettings) return false;
+    return JSON.stringify(settings) !== JSON.stringify(pendingSettings);
+  }, [settings, pendingSettings]);
+
+  const handleSaveSettings = async () => {
+    if (!pendingSettings) return;
+    try {
+      await updateSettings(pendingSettings);
+      Alert.alert('Success', (t.settings as any).saveSettingsSuccess || 'Settings updated successfully');
+    } catch (err) {
+      console.error('Save settings error:', err);
+      Alert.alert('Error', 'Failed to save settings');
+    }
+  };
+
   const languages = [
     { code: 'en' as Language, name: 'English' },
     { code: 'ne' as Language, name: 'नेपाली (Nepali)' },
-    { code: 'hi' as Language, name: 'हिन्दी (Hindi)' },
+    { code: 'ja' as Language, name: '日本語 (Japanese)' },
   ];
 
   const fontSizes = [
@@ -44,150 +69,9 @@ export default function SettingsScreen() {
     { value: 'large' as const, label: 'Large' },
   ];
 
-  const translations = useMemo(() => ({
-    en: {
-      header: 'Settings',
-      language: 'Language',
-      display: 'Display',
-      highContrast: 'High Contrast Mode',
-      highContrastDesc: 'Increases contrast for better visibility',
-      fontSize: 'Font Size',
-      notifications: 'Notifications',
-      enableNotifications: 'Enable Notifications',
-      enableNotificationsDesc: 'Receive app notifications',
-      dailyReminders: 'Daily Reminders',
-      dailyRemindersDesc: 'Get daily health reminders',
-      goalAlerts: 'Goal Alerts',
-      goalAlertsDesc: 'Alerts when approaching goals',
-      healthTips: 'Health Tips',
-      healthTipsDesc: 'Daily wellness tips',
-      registerPush: 'Register Push Device',
-      registering: 'Registering...',
-      goals: 'Daily Goals & Alerts',
-      pushGoalAlerts: 'Push Goal Alerts',
-      pushGoalAlertsDesc: 'Allow push reminders for goals',
-      stepsGoal: 'Steps Goal',
-      waterGoal: 'Water Goal',
-      sleepGoal: 'Sleep Goal',
-      caloriesGoal: 'Calories Goal',
-      saveGoals: 'Save Goals',
-      accessibility: 'Accessibility',
-      screenReader: 'Screen Reader Support',
-      screenReaderDesc: 'Optimize for screen readers',
-      haptics: 'Haptic Feedback',
-      hapticsDesc: 'Vibrations for interactions',
-      voiceInput: 'Voice Input',
-      voiceInputDesc: 'Enable voice commands',
-      reset: 'Reset to Default',
-      resetConfirm: 'Are you sure you want to reset all settings to default?',
-      resetSuccess: 'Settings have been reset to default',
-      footer: 'These settings are designed to meet WCAG 2.1 AA accessibility standards',
-    },
-    ne: {
-      header: 'सेटिङ्स',
-      language: 'भाषा',
-      display: 'प्रदर्शन',
-      highContrast: 'उच्च कन्ट्रास्ट',
-      highContrastDesc: 'देख्न सजिलोका लागि कन्ट्रास्ट बढाउँछ',
-      fontSize: 'फन्ट साइज',
-      notifications: 'सूचनाहरू',
-      enableNotifications: 'सूचना सक्षम गर्नुहोस्',
-      enableNotificationsDesc: 'एप सूचना प्राप्त गर्नुहोस्',
-      dailyReminders: 'दैनिक सम्झना',
-      dailyRemindersDesc: 'दैनिक स्वास्थ्य सम्झना',
-      goalAlerts: 'लक्ष्य अलर्ट',
-      goalAlertsDesc: 'लक्ष्य नजिक हुँदा सूचना',
-      healthTips: 'स्वास्थ्य सुझाव',
-      healthTipsDesc: 'दैनिक स्वास्थ्य सुझाव',
-      registerPush: 'पुष डिभाइस दर्ता',
-      registering: 'दर्ता भइरहेको...',
-      goals: 'दैनिक लक्ष्य र अलर्ट',
-      pushGoalAlerts: 'पुष लक्ष्य अलर्ट',
-      pushGoalAlertsDesc: 'लक्ष्यका लागि पुष सम्झना',
-      stepsGoal: 'हिँडाइ लक्ष्य',
-      waterGoal: 'पानी लक्ष्य',
-      sleepGoal: 'निन्द्रा लक्ष्य',
-      caloriesGoal: 'क्यालोरी लक्ष्य',
-      saveGoals: 'लक्ष्य बचत गर्नुहोस्',
-      accessibility: 'सुगमता',
-      screenReader: 'स्क्रिन रिडर समर्थन',
-      screenReaderDesc: 'स्क्रिन रिडरका लागि अनुकूल',
-      haptics: 'ह्याप्टिक प्रतिक्रिया',
-      hapticsDesc: 'इन्टर्याक्शनका लागि कम्पन',
-      voiceInput: 'भ्वाइस इनपुट',
-      voiceInputDesc: 'भ्वाइस कमान्ड सक्षम',
-      reset: 'डिफल्टमा फर्काउनुहोस्',
-      resetConfirm: 'सबै सेटिङ्स डिफल्टमा फर्काउनुहोस्?',
-      resetSuccess: 'सेटिङ्स डिफल्टमा पुन: सेट गरियो',
-      footer: 'यी सेटिङहरू WCAG 2.1 AA मापदण्ड पूरा गर्न डिजाइन गरिएका छन्',
-    },
-    hi: {
-      header: 'सेटिंग्स',
-      language: 'भाषा',
-      display: 'डिस्प्ले',
-      highContrast: 'हाई कॉन्ट्रास्ट मोड',
-      highContrastDesc: 'बेहतर दृश्यता के लिए कॉन्ट्रास्ट बढ़ाता है',
-      fontSize: 'फ़ॉन्ट आकार',
-      notifications: 'सूचनाएं',
-      enableNotifications: 'सूचनाएं चालू करें',
-      enableNotificationsDesc: 'ऐप सूचनाएं प्राप्त करें',
-      dailyReminders: 'दैनिक रिमाइंडर',
-      dailyRemindersDesc: 'दैनिक स्वास्थ्य रिमाइंडर',
-      goalAlerts: 'लक्ष्य अलर्ट',
-      goalAlertsDesc: 'लक्ष्य के पास पहुँचते समय अलर्ट',
-      healthTips: 'स्वास्थ्य सुझाव',
-      healthTipsDesc: 'दैनिक स्वास्थ्य टिप्स',
-      registerPush: 'पुश डिवाइस रजिस्टर करें',
-      registering: 'रजिस्टर हो रहा है...',
-      goals: 'दैनिक लक्ष्य और अलर्ट',
-      pushGoalAlerts: 'पुश लक्ष्य अलर्ट',
-      pushGoalAlertsDesc: 'लक्ष्यों के लिए पुश रिमाइंडर',
-      stepsGoal: 'कदम लक्ष्य',
-      waterGoal: 'पानी लक्ष्य',
-      sleepGoal: 'नींद लक्ष्य',
-      caloriesGoal: 'कैलोरी लक्ष्य',
-      saveGoals: 'लक्ष्य सहेजें',
-      accessibility: 'एक्सेसिबिलिटी',
-      screenReader: 'स्क्रीन रीडर समर्थन',
-      screenReaderDesc: 'स्क्रीन रीडर के लिए अनुकूल',
-      haptics: 'हैप्टिक फीडबैक',
-      hapticsDesc: 'इंटरैक्शन के लिए वाइब्रेशन',
-      voiceInput: 'वॉयस इनपुट',
-      voiceInputDesc: 'वॉयस कमांड सक्षम करें',
-      reset: 'डिफ़ॉल्ट पर रीसेट',
-      resetConfirm: 'सभी सेटिंग्स को डिफ़ॉल्ट पर रीसेट करें?',
-      resetSuccess: 'सेटिंग्स डिफ़ॉल्ट पर रीसेट हुईं',
-      footer: 'ये सेटिंग्स WCAG 2.1 AA मानकों को पूरा करने के लिए डिज़ाइन की गई हैं',
-    },
-  }), []);
+  const { t } = useTranslation();
 
-  const t = translations[settings.language] || translations.en;
-
-  const palette = settings.highContrast ? {
-    primary: '#FFD60A',
-    text: '#FFFFFF',
-    textSecondary: '#E5E7EB',
-    textLight: '#D1D5DB',
-    background: '#000000',
-    backgroundSecondary: '#0F172A',
-    border: '#374151',
-    card: '#111827',
-    cardShadow: 'rgba(255, 255, 255, 0.18)',
-  } : {
-    primary: Colors.primary,
-    text: Colors.text,
-    textSecondary: Colors.textSecondary,
-    textLight: Colors.textLight,
-    background: Colors.background,
-    backgroundSecondary: Colors.backgroundSecondary,
-    border: Colors.border,
-    card: Colors.card,
-    cardShadow: Colors.cardShadow,
-  };
-
-  const fontScale = { small: 0.9, medium: 1, large: 1.15 }[settings.fontSize] || 1;
-  const scale = useMemo(() => (size: number) => Math.round(size * fontScale), [fontScale]);
-
+  // Use memoized styles based on dynamic palette and scale
   const themed = useMemo(() => ({
     container: { backgroundColor: palette.backgroundSecondary },
     header: { backgroundColor: palette.background, borderBottomColor: palette.border },
@@ -204,7 +88,7 @@ export default function SettingsScreen() {
     numberInput: { borderColor: palette.border, backgroundColor: palette.backgroundSecondary, color: palette.text },
     saveButton: { backgroundColor: palette.primary },
     saveButtonText: { fontSize: scale(16) },
-  }), [palette, fontScale, scale]);
+  }), [palette, scale]);
 
   const API_BASE_URL = (() => {
     const normalize = (url: string) => {
@@ -253,8 +137,11 @@ export default function SettingsScreen() {
     }
   }, [ensureAccessToken, API_BASE_URL]);
 
+  const [isSavingGoals, setSavingGoals] = useState(false);
+
   const saveGoals = async () => {
     try {
+      setSavingGoals(true);
       const token = await ensureAccessToken();
       if (!token || !goals) return;
       const res = await fetch(`${API_BASE_URL}/notifications/goals`, {
@@ -274,6 +161,8 @@ export default function SettingsScreen() {
     } catch (error) {
       console.error('Save goals error:', error);
       Alert.alert('Error', 'Could not save goals');
+    } finally {
+      setSavingGoals(false);
     }
   };
 
@@ -294,16 +183,16 @@ export default function SettingsScreen() {
 
   const handleResetSettings = () => {
     Alert.alert(
-      t.reset,
-      t.resetConfirm,
+      t.settings.reset,
+      t.settings.resetConfirm,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t.common.cancel, style: 'cancel' },
         {
-          text: t.reset,
+          text: t.settings.reset,
           style: 'destructive',
           onPress: () => {
             resetSettings();
-            Alert.alert(t.reset, t.resetSuccess);
+            Alert.alert(t.settings.reset, t.settings.resetSuccess);
           },
         },
       ]
@@ -314,11 +203,12 @@ export default function SettingsScreen() {
     <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={styles.header}>
+
+      <View style={[styles.header, themed.header]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
           <X size={24} color={palette.text} strokeWidth={2} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, themed.headerTitle]}>{t.header}</Text>
+        <Text style={[styles.headerTitle, themed.headerTitle]}>{t.settings.header}</Text>
         <View style={styles.headerButton} />
       </View>
 
@@ -330,7 +220,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Globe size={20} color={palette.primary} strokeWidth={2} />
-            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.language}</Text>
+            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.settings.language}</Text>
           </View>
           <View style={[styles.card, themed.card]}>
             {languages.map((lang, index) => (
@@ -340,20 +230,20 @@ export default function SettingsScreen() {
                   styles.optionRow,
                   index < languages.length - 1 && styles.optionRowBorder,
                 ]}
-                onPress={() => setLanguage(lang.code)}
+                onPress={() => setPendingSettings((prev: Settings | null) => prev ? { ...prev, language: lang.code } : null)}
                 accessibilityRole="radio"
                 accessibilityLabel={`Select ${lang.name} language`}
-                accessibilityState={{ selected: settings.language === lang.code }}
+                accessibilityState={{ selected: (pendingSettings?.language || settings.language) === lang.code }}
               >
                 <Text style={[styles.optionLabel, themed.optionLabel]}>{lang.name}</Text>
                 <View
                   style={[
                     styles.radioOuter,
                     { borderColor: palette.border },
-                    settings.language === lang.code && { borderColor: palette.primary },
+                    (pendingSettings?.language || settings.language) === lang.code && { borderColor: palette.primary },
                   ]}
                 >
-                  {settings.language === lang.code && <View style={[styles.radioInner, { backgroundColor: palette.primary }]} />}
+                  {(pendingSettings?.language || settings.language) === lang.code && <View style={[styles.radioInner, { backgroundColor: palette.primary }]} />}
                 </View>
               </TouchableOpacity>
             ))}
@@ -363,53 +253,53 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Eye size={20} color={palette.primary} strokeWidth={2} />
-            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.display}</Text>
+            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.settings.display}</Text>
           </View>
 
           <View style={[styles.card, themed.card]}>
             <View style={styles.optionRow}>
               <View style={styles.optionContent}>
-                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.highContrast}</Text>
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.settings.highContrast}</Text>
                 <Text style={[styles.optionDescription, themed.optionDescription]}>
-                  {t.highContrastDesc}
+                  {t.settings.highContrastDesc}
                 </Text>
               </View>
               <Switch
-                value={settings.highContrast}
-                onValueChange={toggleHighContrast}
+                value={pendingSettings?.highContrast ?? settings.highContrast}
+                onValueChange={(val) => setPendingSettings((prev: Settings | null) => prev ? { ...prev, highContrast: val } : null)}
                 trackColor={{ false: palette.border, true: palette.primary }}
-                thumbColor={Colors.text}
+                thumbColor={palette.text}
                 accessibilityLabel="Toggle high contrast mode"
                 accessibilityRole="switch"
-                accessibilityState={{ checked: settings.highContrast }}
+                accessibilityState={{ checked: pendingSettings?.highContrast ?? settings.highContrast }}
               />
             </View>
           </View>
 
           <View style={[styles.card, themed.card]}>
-            <Text style={[styles.cardTitle, themed.cardTitle]}>{t.fontSize}</Text>
+            <Text style={[styles.cardTitle, themed.cardTitle]}>{t.settings.fontSize}</Text>
             <View style={styles.segmentedControl}>
               {fontSizes.map((size) => (
                 <TouchableOpacity
                   key={size.value}
                   style={[
                     styles.segmentButton,
-                    settings.fontSize === size.value && styles.segmentButtonActive,
+                    (pendingSettings?.fontSize || settings.fontSize) === size.value && styles.segmentButtonActive,
                   ]}
-                  onPress={() => setFontSize(size.value)}
+                  onPress={() => setPendingSettings((prev: Settings | null) => prev ? { ...prev, fontSize: size.value } : null)}
                   accessibilityRole="button"
                   accessibilityLabel={`Set font size to ${size.label}`}
-                  accessibilityState={{ selected: settings.fontSize === size.value }}
+                  accessibilityState={{ selected: (pendingSettings?.fontSize || settings.fontSize) === size.value }}
                 >
                   <Text
                     style={[
                       styles.segmentButtonText,
                       themed.segmentButtonText,
-                      settings.fontSize === size.value && styles.segmentButtonTextActive,
-                      settings.fontSize === size.value && themed.segmentButtonTextActive,
+                      (pendingSettings?.fontSize || settings.fontSize) === size.value && styles.segmentButtonTextActive,
+                      (pendingSettings?.fontSize || settings.fontSize) === size.value && themed.segmentButtonTextActive,
                     ]}
                   >
-                    size.label
+                    {size.label}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -420,90 +310,90 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Bell size={20} color={palette.primary} strokeWidth={2} />
-            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.notifications}</Text>
+            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.settings.notifications}</Text>
           </View>
 
           <View style={[styles.card, themed.card]}>
             <View style={[styles.optionRow, styles.optionRowBorder]}>
               <View style={styles.optionContent}>
-                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.enableNotifications}</Text>
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.settings.enableNotifications}</Text>
                 <Text style={[styles.optionDescription, themed.optionDescription]}>
-                  {t.enableNotificationsDesc}
+                  {t.settings.enableNotificationsDesc}
                 </Text>
               </View>
               <Switch
-                value={settings.notifications.enabled}
-                onValueChange={(value) => updateNotifications({ enabled: value })}
+                value={pendingSettings?.notifications.enabled ?? settings.notifications.enabled}
+                onValueChange={(value) => setPendingSettings((prev: Settings | null) => prev ? { ...prev, notifications: { ...prev.notifications, enabled: value } } : null)}
                 trackColor={{ false: palette.border, true: palette.primary }}
                 thumbColor={palette.text}
                 accessibilityLabel="Toggle notifications"
                 accessibilityRole="switch"
-                accessibilityState={{ checked: settings.notifications.enabled }}
+                accessibilityState={{ checked: pendingSettings?.notifications.enabled ?? settings.notifications.enabled }}
               />
             </View>
 
             <View style={[styles.optionRow, styles.optionRowBorder]}>
               <View style={styles.optionContent}>
-                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.dailyReminders}</Text>
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.settings.dailyReminders}</Text>
                 <Text style={[styles.optionDescription, themed.optionDescription]}>
-                  {t.dailyRemindersDesc}
+                  {t.settings.dailyRemindersDesc}
                 </Text>
               </View>
               <Switch
-                value={settings.notifications.dailyReminders}
-                onValueChange={(value) => updateNotifications({ dailyReminders: value })}
+                value={pendingSettings?.notifications.dailyReminders ?? settings.notifications.dailyReminders}
+                onValueChange={(value) => setPendingSettings((prev: Settings | null) => prev ? { ...prev, notifications: { ...prev.notifications, dailyReminders: value } } : null)}
                 trackColor={{ false: palette.border, true: palette.primary }}
                 thumbColor={palette.text}
-                disabled={!settings.notifications.enabled}
+                disabled={!(pendingSettings?.notifications.enabled ?? settings.notifications.enabled)}
                 accessibilityLabel="Toggle daily reminders"
                 accessibilityRole="switch"
                 accessibilityState={{
-                  checked: settings.notifications.dailyReminders,
-                  disabled: !settings.notifications.enabled
+                  checked: pendingSettings?.notifications.dailyReminders ?? settings.notifications.dailyReminders,
+                  disabled: !(pendingSettings?.notifications.enabled ?? settings.notifications.enabled)
                 }}
               />
             </View>
 
             <View style={[styles.optionRow, styles.optionRowBorder]}>
               <View style={styles.optionContent}>
-                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.goalAlerts}</Text>
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.settings.goalAlerts}</Text>
                 <Text style={[styles.optionDescription, themed.optionDescription]}>
-                  {t.goalAlertsDesc}
+                  {t.settings.goalAlertsDesc}
                 </Text>
               </View>
               <Switch
-                value={settings.notifications.goalAlerts}
-                onValueChange={(value) => updateNotifications({ goalAlerts: value })}
+                value={pendingSettings?.notifications.goalAlerts ?? settings.notifications.goalAlerts}
+                onValueChange={(value) => setPendingSettings((prev: Settings | null) => prev ? { ...prev, notifications: { ...prev.notifications, goalAlerts: value } } : null)}
                 trackColor={{ false: palette.border, true: palette.primary }}
                 thumbColor={palette.text}
-                disabled={!settings.notifications.enabled}
+                disabled={!(pendingSettings?.notifications.enabled ?? settings.notifications.enabled)}
                 accessibilityLabel="Toggle goal alerts"
                 accessibilityRole="switch"
                 accessibilityState={{
-                  checked: settings.notifications.goalAlerts,
-                  disabled: !settings.notifications.enabled
+                  checked: pendingSettings?.notifications.goalAlerts ?? settings.notifications.goalAlerts,
+                  disabled: !(pendingSettings?.notifications.enabled ?? settings.notifications.enabled)
                 }}
               />
             </View>
 
             <View style={styles.optionRow}>
               <View style={styles.optionContent}>
-                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.healthTips}</Text>
+                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.settings.healthTips}</Text>
                 <Text style={[styles.optionDescription, themed.optionDescription]}>
-                  {t.healthTipsDesc}
+                  {t.settings.healthTipsDesc}
                 </Text>
               </View>
               <Switch
-                value={settings.notifications.healthTips}
-                onValueChange={(value) => updateNotifications({ healthTips: value })}
+                value={pendingSettings?.notifications.healthTips ?? settings.notifications.healthTips}
+                onValueChange={(value) => setPendingSettings((prev: Settings | null) => prev ? { ...prev, notifications: { ...prev.notifications, healthTips: value } } : null)}
                 trackColor={{ false: palette.border, true: palette.primary }}
                 thumbColor={palette.text}
-                disabled={!settings.notifications.enabled}
+                disabled={!(pendingSettings?.notifications.enabled ?? settings.notifications.enabled)}
                 accessibilityLabel="Toggle health tips"
                 accessibilityRole="switch"
                 accessibilityState={{
-                  checked: settings.notifications.healthTips,
-                  disabled: !settings.notifications.enabled
+                  checked: pendingSettings?.notifications.healthTips ?? settings.notifications.healthTips,
+                  disabled: !(pendingSettings?.notifications.enabled ?? settings.notifications.enabled)
                 }}
               />
             </View>
@@ -518,7 +408,7 @@ export default function SettingsScreen() {
               disabled={isRegisteringPush}
             >
               <Text style={[styles.saveButtonText, themed.saveButtonText]}>
-                {isRegisteringPush ? t.registering : t.registerPush}
+                {isRegisteringPush ? t.settings.registering : t.settings.registerPush}
               </Text>
             </TouchableOpacity>
           </View>
@@ -527,7 +417,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Target size={20} color={palette.primary} strokeWidth={2} />
-            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.goals}</Text>
+            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.settings.goals}</Text>
           </View>
           <View style={[styles.card, themed.card]}>
             {isGoalsLoading && !goals ? (
@@ -536,8 +426,8 @@ export default function SettingsScreen() {
               <>
                 <View style={[styles.optionRow, styles.optionRowBorder]}>
                   <View style={styles.optionContent}>
-                    <Text style={[styles.optionLabel, themed.optionLabel]}>{t.pushGoalAlerts}</Text>
-                    <Text style={[styles.optionDescription, themed.optionDescription]}>{t.pushGoalAlertsDesc}</Text>
+                    <Text style={[styles.optionLabel, themed.optionLabel]}>{t.settings.pushGoalAlerts}</Text>
+                    <Text style={[styles.optionDescription, themed.optionDescription]}>{t.settings.pushGoalAlertsDesc}</Text>
                   </View>
                   <Switch
                     value={goals?.pushEnabled ?? true}
@@ -551,10 +441,10 @@ export default function SettingsScreen() {
                 </View>
 
                 {[
-                  { key: 'steps', label: t.stepsGoal, suffix: 'steps/day' },
-                  { key: 'water', label: t.waterGoal, suffix: 'glasses/day' },
-                  { key: 'sleep', label: t.sleepGoal, suffix: 'hours/night' },
-                  { key: 'calories', label: t.caloriesGoal, suffix: 'kcal/day' },
+                  { key: 'steps', label: t.settings.stepsGoal, suffix: 'steps/day' },
+                  { key: 'water', label: t.settings.waterGoal, suffix: 'glasses/day' },
+                  { key: 'sleep', label: t.settings.sleepGoal, suffix: 'hours/night' },
+                  { key: 'calories', label: t.settings.caloriesGoal, suffix: 'kcal/day' },
                 ].map(item => (
                   <View key={item.key} style={[styles.optionRow, styles.optionRowBorder]}>
                     <View style={styles.optionContent}>
@@ -573,76 +463,21 @@ export default function SettingsScreen() {
                   </View>
                 ))}
 
-                <TouchableOpacity style={[styles.saveButton, themed.saveButton]} onPress={saveGoals}>
-                  <Text style={[styles.saveButtonText, themed.saveButtonText]}>{t.saveGoals}</Text>
+                <TouchableOpacity
+                  style={[styles.saveButton, themed.saveButton, { opacity: isSavingGoals ? 0.7 : 1 }]}
+                  onPress={saveGoals}
+                  disabled={isSavingGoals}
+                >
+                  <Text style={[styles.saveButtonText, themed.saveButtonText]}>
+                    {isSavingGoals ? t.common.loading : t.settings.saveGoals}
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
           </View>
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Smartphone size={20} color={palette.primary} strokeWidth={2} />
-            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.accessibility}</Text>
-          </View>
 
-          <View style={[styles.card, themed.card]}>
-            <View style={[styles.optionRow, styles.optionRowBorder]}>
-              <View style={styles.optionContent}>
-                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.screenReader}</Text>
-                <Text style={[styles.optionDescription, themed.optionDescription]}>
-                  {t.screenReaderDesc}
-                </Text>
-              </View>
-              <Switch
-                value={settings.accessibility.screenReader}
-                onValueChange={(value) => updateAccessibility({ screenReader: value })}
-                trackColor={{ false: palette.border, true: palette.primary }}
-                thumbColor={palette.text}
-                accessibilityLabel="Toggle screen reader support"
-                accessibilityRole="switch"
-                accessibilityState={{ checked: settings.accessibility.screenReader }}
-              />
-            </View>
-
-            <View style={[styles.optionRow, styles.optionRowBorder]}>
-              <View style={styles.optionContent}>
-                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.haptics}</Text>
-                <Text style={[styles.optionDescription, themed.optionDescription]}>
-                  {t.hapticsDesc}
-                </Text>
-              </View>
-              <Switch
-                value={settings.accessibility.hapticFeedback}
-                onValueChange={(value) => updateAccessibility({ hapticFeedback: value })}
-                trackColor={{ false: palette.border, true: palette.primary }}
-                thumbColor={palette.text}
-                accessibilityLabel="Toggle haptic feedback"
-                accessibilityRole="switch"
-                accessibilityState={{ checked: settings.accessibility.hapticFeedback }}
-              />
-            </View>
-
-            <View style={styles.optionRow}>
-              <View style={styles.optionContent}>
-                <Text style={[styles.optionLabel, themed.optionLabel]}>{t.voiceInput}</Text>
-                <Text style={[styles.optionDescription, themed.optionDescription]}>
-                  {t.voiceInputDesc}
-                </Text>
-              </View>
-              <Switch
-                value={settings.accessibility.voiceInput}
-                onValueChange={(value) => updateAccessibility({ voiceInput: value })}
-                trackColor={{ false: palette.border, true: palette.primary }}
-                thumbColor={palette.text}
-                accessibilityLabel="Toggle voice input"
-                accessibilityRole="switch"
-                accessibilityState={{ checked: settings.accessibility.voiceInput }}
-              />
-            </View>
-          </View>
-        </View>
 
         <TouchableOpacity
           style={styles.resetButton}
@@ -651,12 +486,25 @@ export default function SettingsScreen() {
           accessibilityLabel="Reset all settings to default"
         >
           <RefreshCw size={20} color={Colors.error} strokeWidth={2} />
-          <Text style={[styles.resetButtonText, themed.resetButtonText]}>{t.reset}</Text>
+          <Text style={[styles.resetButtonText, themed.resetButtonText]}>{t.settings.reset}</Text>
         </TouchableOpacity>
 
         <Text style={[styles.footerText, themed.footerText]}>
-          {t.footer}
+          {t.settings.footer}
         </Text>
+
+        {hasPendingChanges && (
+          <View style={[styles.floatingSaveContainer, { bottom: insets.bottom + 20 }]}>
+            <TouchableOpacity
+              style={[styles.saveButton, themed.saveButton, styles.mainSaveButton]}
+              onPress={handleSaveSettings}
+            >
+              <Text style={[styles.saveButtonText, themed.saveButtonText]}>
+                {(t.settings as any).saveSettings || 'Save Changes'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -840,5 +688,16 @@ const styles = StyleSheet.create({
     color: Colors.textWhite,
     fontWeight: '700' as const,
     fontSize: 16,
+  },
+  floatingSaveContainer: {
+    paddingTop: 20,
+    width: '100%',
+  },
+  mainSaveButton: {
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });
