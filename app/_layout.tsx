@@ -9,20 +9,32 @@ import { AdminProvider } from "@/contexts/AdminContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { MealTrackingProvider } from "@/contexts/MealTrackingContext";
 
-SplashScreen.preventAutoHideAsync();
+// SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
+import { useTheme } from "@/contexts/SettingsContext";
+import { StatusBar } from "expo-status-bar";
+
 function RootLayoutNav() {
+  const { colors, isHighContrast } = useTheme();
+
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back", headerShown: false }}>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="signup" options={{ headerShown: false }} />
-      <Stack.Screen name="ehr-upload" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-    </Stack>
+    <>
+      <StatusBar
+        style={isHighContrast ? 'light' : 'dark'}
+        backgroundColor={colors.backgroundSecondary}
+        translucent={true}
+      />
+      <Stack screenOptions={{ headerBackTitle: "Back", headerShown: false }}>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="signup" options={{ headerShown: false }} />
+        <Stack.Screen name="health-records" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      </Stack>
+    </>
   );
 }
 
