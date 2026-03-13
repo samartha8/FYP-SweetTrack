@@ -1,62 +1,89 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Activity, Droplet, Moon, Flame, X, TrendingUp, Link } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Colors from '@/constants/colors';
 import { useUser } from '@/contexts/UserContext';
+import { useTheme } from '@/contexts/SettingsContext';
+import { useTranslation } from '@/hooks/use-translation';
 
 type MetricType = 'steps' | 'water' | 'sleep' | 'calories';
 
 export default function WellnessScreen() {
   const insets = useSafeAreaInsets();
   const { healthMetrics, dailyGoals, updateHealthMetrics, isGoogleFitConnected, connectGoogleFit } = useUser();
+  const { colors, scale } = useTheme();
+  const { t } = useTranslation();
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState<MetricType | null>(null);
   const [inputValue, setInputValue] = useState('');
 
-  const metrics = [
+  // Dynamic Styles
+  const themed = useMemo(() => ({
+    container: { backgroundColor: colors.backgroundSecondary },
+    header: { backgroundColor: colors.background },
+    headerTitle: { color: colors.text, fontSize: scale(28) },
+    headerSubtitle: { color: colors.textSecondary, fontSize: scale(14) },
+    card: { backgroundColor: colors.card, shadowColor: colors.cardShadow },
+    tipsTitle: { color: colors.text, fontSize: scale(16) },
+    tipsDescription: { color: colors.textSecondary, fontSize: scale(14) },
+    modalOverlay: { backgroundColor: colors.overlay },
+    modalContent: { backgroundColor: colors.card },
+    modalTitle: { color: colors.text, fontSize: scale(20) },
+    modalInput: { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border },
+    modalButtonText: { color: colors.textWhite, fontSize: scale(16) },
+    googleFitTitle: { fontSize: scale(24) },
+    googleFitDescription: { fontSize: scale(16) },
+    metricLabel: { fontSize: scale(18) },
+    metricValue: { fontSize: scale(36) },
+    metricUnit: { fontSize: scale(16) },
+    progressText: { fontSize: scale(14) },
+    editButtonText: { fontSize: scale(14) },
+    quickButtonText: { fontSize: scale(14) },
+  }), [colors, scale]);
+
+  const metrics = useMemo(() => [
     {
       type: 'steps' as MetricType,
       icon: Activity,
-      label: 'Steps',
+      label: t.wellness.steps,
       value: healthMetrics.steps,
       goal: dailyGoals.steps,
-      unit: 'steps',
-      color: Colors.chart.bmi,
-      gradient: [Colors.chart.bmi, Colors.chart.bmi + '80'],
+      unit: t.wellness.unitSteps,
+      color: colors.chart?.bmi || '#FFD60A',
+      gradient: [colors.chart?.bmi || '#FFD60A', (colors.chart?.bmi || '#FFD60A') + '80'],
     },
     {
       type: 'water' as MetricType,
       icon: Droplet,
-      label: 'Water',
+      label: t.wellness.water,
       value: healthMetrics.water,
       goal: dailyGoals.water,
-      unit: 'glasses',
-      color: Colors.secondary,
-      gradient: [Colors.secondary, Colors.secondaryLight],
+      unit: t.wellness.unitWater,
+      color: colors.secondary,
+      gradient: [colors.secondary, colors.secondary + '80'], // Fallback if light var missing
     },
     {
       type: 'sleep' as MetricType,
       icon: Moon,
-      label: 'Sleep',
+      label: t.wellness.sleep,
       value: healthMetrics.sleep,
       goal: dailyGoals.sleep,
-      unit: 'hours',
-      color: Colors.chart.glucose,
-      gradient: [Colors.chart.glucose, Colors.chart.glucose + '80'],
+      unit: t.wellness.unitSleep,
+      color: colors.chart?.glucose || '#30D158',
+      gradient: [colors.chart?.glucose || '#30D158', (colors.chart?.glucose || '#30D158') + '80'],
     },
     {
       type: 'calories' as MetricType,
       icon: Flame,
-      label: 'Calories',
+      label: t.wellness.calories,
       value: healthMetrics.calories,
       goal: dailyGoals.calories,
-      unit: 'kcal',
-      color: Colors.warning,
-      gradient: [Colors.warning, Colors.warning + '80'],
+      unit: t.wellness.unitCalories,
+      color: colors.warning,
+      gradient: [colors.warning, colors.warning + '80'],
     },
-  ];
+  ], [healthMetrics, dailyGoals, colors, t]);
 
   const handleOpenModal = (type: MetricType) => {
     setSelectedMetric(type);
@@ -83,10 +110,10 @@ export default function WellnessScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Wellness Tracker</Text>
-        <Text style={styles.headerSubtitle}>Track your daily health goals</Text>
+    <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
+      <View style={[styles.header, themed.header]}>
+        <Text style={[styles.headerTitle, themed.headerTitle]}>{t.wellness.header}</Text>
+        <Text style={[styles.headerSubtitle, themed.headerSubtitle]}>{t.wellness.subtitle}</Text>
       </View>
 
       <ScrollView
@@ -101,19 +128,19 @@ export default function WellnessScreen() {
             onPress={connectGoogleFit}
           >
             <LinearGradient
-              colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+              colors={colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
               style={styles.googleFitGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
               <View style={styles.googleFitContent}>
                 <View style={styles.googleFitIconContainer}>
-                  <Link size={40} color={Colors.textWhite} strokeWidth={2} />
+                  <Link size={40} color={colors.textWhite} strokeWidth={2} />
                 </View>
                 <View style={styles.googleFitTextContainer}>
-                  <Text style={styles.googleFitTitle}>Connect to Google Fit</Text>
-                  <Text style={styles.googleFitDescription}>
-                    Connect to Google Fit to view your health data.
+                  <Text style={[styles.googleFitTitle, themed.googleFitTitle, { color: colors.textWhite }]}>{t.home.googleFit}</Text>
+                  <Text style={[styles.googleFitDescription, themed.googleFitDescription, { color: colors.textWhite }]}>
+                    {t.wellness.keepTracking}
                   </Text>
                 </View>
               </View>
@@ -122,122 +149,122 @@ export default function WellnessScreen() {
         ) : (
           <>
             {metrics.map((metric, index) => {
-          const progress = Math.min((metric.value / metric.goal) * 100, 100);
-          const Icon = metric.icon;
+              const progress = Math.min((metric.value / metric.goal) * 100, 100);
+              const Icon = metric.icon;
 
-          return (
-            <View key={index} style={styles.metricCard}>
-              <LinearGradient
-                colors={metric.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
-                style={styles.metricGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <View style={styles.metricHeader}>
-                  <View style={styles.metricIconContainer}>
-                    <Icon size={28} color={Colors.textWhite} strokeWidth={2} />
-                  </View>
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={() => handleOpenModal(metric.type)}
+              return (
+                <View key={index} style={[styles.metricCard, themed.card]}>
+                  <LinearGradient
+                    colors={metric.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                    style={styles.metricGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
                   >
-                    <Text style={styles.editButtonText}>Edit</Text>
-                  </TouchableOpacity>
-                </View>
+                    <View style={styles.metricHeader}>
+                      <View style={styles.metricIconContainer}>
+                        <Icon size={28} color={colors.textWhite} strokeWidth={2} />
+                      </View>
+                      <TouchableOpacity
+                        style={styles.editButton}
+                        onPress={() => handleOpenModal(metric.type)}
+                      >
+                        <Text style={[styles.editButtonText, themed.editButtonText]}>{t.common.edit}</Text>
+                      </TouchableOpacity>
+                    </View>
 
-                <Text style={styles.metricLabel}>{metric.label}</Text>
-                <View style={styles.metricValueContainer}>
-                  <Text style={styles.metricValue}>{metric.value}</Text>
-                  <Text style={styles.metricUnit}> / {metric.goal} {metric.unit}</Text>
-                </View>
+                    <Text style={[styles.metricLabel, themed.metricLabel]}>{metric.label}</Text>
+                    <View style={styles.metricValueContainer}>
+                      <Text style={[styles.metricValue, themed.metricValue]}>{metric.value}</Text>
+                      <Text style={[styles.metricUnit, themed.metricUnit]}> / {metric.goal} {metric.unit}</Text>
+                    </View>
 
-                <View style={styles.progressBarContainer}>
-                  <View style={styles.progressBarBackground}>
-                    <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-                  </View>
-                  <Text style={styles.progressText}>{Math.round(progress)}%</Text>
-                </View>
+                    <View style={styles.progressBarContainer}>
+                      <View style={styles.progressBarBackground}>
+                        <View style={[styles.progressBarFill, { width: `${progress}%`, backgroundColor: colors.textWhite }]} />
+                      </View>
+                      <Text style={[styles.progressText, themed.progressText]}>{Math.round(progress)}%</Text>
+                    </View>
 
-                <View style={styles.quickActions}>
-                  {metric.type === 'steps' && (
-                    <>
-                      <TouchableOpacity
-                        style={styles.quickButton}
-                        onPress={() => handleQuickAdd(metric.type, 1000)}
-                      >
-                        <Text style={styles.quickButtonText}>+1000</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.quickButton}
-                        onPress={() => handleQuickAdd(metric.type, 5000)}
-                      >
-                        <Text style={styles.quickButtonText}>+5000</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                  {metric.type === 'water' && (
-                    <>
-                      <TouchableOpacity
-                        style={styles.quickButton}
-                        onPress={() => handleQuickAdd(metric.type, 1)}
-                      >
-                        <Text style={styles.quickButtonText}>+1 glass</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.quickButton}
-                        onPress={() => handleQuickAdd(metric.type, 2)}
-                      >
-                        <Text style={styles.quickButtonText}>+2 glasses</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                  {metric.type === 'sleep' && (
-                    <>
-                      <TouchableOpacity
-                        style={styles.quickButton}
-                        onPress={() => handleQuickAdd(metric.type, 1)}
-                      >
-                        <Text style={styles.quickButtonText}>+1 hr</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.quickButton}
-                        onPress={() => handleQuickAdd(metric.type, 2)}
-                      >
-                        <Text style={styles.quickButtonText}>+2 hrs</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                  {metric.type === 'calories' && (
-                    <>
-                      <TouchableOpacity
-                        style={styles.quickButton}
-                        onPress={() => handleQuickAdd(metric.type, 100)}
-                      >
-                        <Text style={styles.quickButtonText}>+100</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.quickButton}
-                        onPress={() => handleQuickAdd(metric.type, 500)}
-                      >
-                        <Text style={styles.quickButtonText}>+500</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
+                    <View style={styles.quickActions}>
+                      {metric.type === 'steps' && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.quickButton}
+                            onPress={() => handleQuickAdd(metric.type, 1000)}
+                          >
+                            <Text style={[styles.quickButtonText, themed.quickButtonText]}>+1000</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.quickButton}
+                            onPress={() => handleQuickAdd(metric.type, 5000)}
+                          >
+                            <Text style={styles.quickButtonText}>+5000</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                      {metric.type === 'water' && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.quickButton}
+                            onPress={() => handleQuickAdd(metric.type, 1)}
+                          >
+                            <Text style={styles.quickButtonText}>+1 glass</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.quickButton}
+                            onPress={() => handleQuickAdd(metric.type, 2)}
+                          >
+                            <Text style={styles.quickButtonText}>+2 glasses</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                      {metric.type === 'sleep' && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.quickButton}
+                            onPress={() => handleQuickAdd(metric.type, 1)}
+                          >
+                            <Text style={styles.quickButtonText}>+1 hr</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.quickButton}
+                            onPress={() => handleQuickAdd(metric.type, 2)}
+                          >
+                            <Text style={styles.quickButtonText}>+2 hrs</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                      {metric.type === 'calories' && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.quickButton}
+                            onPress={() => handleQuickAdd(metric.type, 100)}
+                          >
+                            <Text style={styles.quickButtonText}>+100</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.quickButton}
+                            onPress={() => handleQuickAdd(metric.type, 500)}
+                          >
+                            <Text style={styles.quickButtonText}>+500</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  </LinearGradient>
                 </View>
-              </LinearGradient>
-            </View>
-          );
-        })}
+              );
+            })}
           </>
         )}
 
         {isGoogleFitConnected && (
-          <View style={styles.tipsCard}>
-            <TrendingUp size={24} color={Colors.primary} strokeWidth={2} />
+          <View style={[styles.tipsCard, themed.card]}>
+            <TrendingUp size={24} color={colors.primary} strokeWidth={2} />
             <View style={styles.tipsContent}>
-              <Text style={styles.tipsTitle}>Weekly Summary</Text>
-              <Text style={styles.tipsDescription}>
-                You&apos;re doing great! Keep tracking your daily activities to maintain a healthy lifestyle.
+              <Text style={[styles.tipsTitle, themed.tipsTitle]}>{t.wellness.weeklySummary}</Text>
+              <Text style={[styles.tipsDescription, themed.tipsDescription]}>
+                {t.wellness.keepTracking}
               </Text>
             </View>
           </View>
@@ -250,34 +277,34 @@ export default function WellnessScreen() {
         animationType="fade"
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, themed.modalOverlay]}>
+          <View style={[styles.modalContent, themed.modalContent]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                Update {metrics.find(m => m.type === selectedMetric)?.label}
+              <Text style={[styles.modalTitle, themed.modalTitle]}>
+                {t.common.update} {metrics.find(m => m.type === selectedMetric)?.label}
               </Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <X size={24} color={Colors.text} />
+                <X size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             <TextInput
-              style={styles.modalInput}
+              style={[styles.modalInput, themed.modalInput]}
               value={inputValue}
               onChangeText={setInputValue}
               keyboardType="numeric"
-              placeholder="Enter value"
-              placeholderTextColor={Colors.textLight}
+              placeholder={t.wellness.enterValue}
+              placeholderTextColor={colors.textLight}
             />
 
             <TouchableOpacity style={styles.modalButton} onPress={handleSave}>
               <LinearGradient
-                colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                colors={colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
                 style={styles.modalButtonGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               >
-                <Text style={styles.modalButtonText}>Save</Text>
+                <Text style={[styles.modalButtonText, themed.modalButtonText]}>{t.common.save}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -290,21 +317,15 @@ export default function WellnessScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundSecondary,
   },
   header: {
-    backgroundColor: Colors.background,
     paddingHorizontal: 20,
     paddingVertical: 20,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '700' as const,
-    color: Colors.text,
+    fontWeight: '700',
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
     marginTop: 4,
   },
   scrollView: {
@@ -318,7 +339,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
@@ -348,14 +368,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   editButtonText: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.textWhite,
+    fontWeight: '600',
+    color: '#FFF',
   },
   metricLabel: {
     fontSize: 18,
-    fontWeight: '600' as const,
-    color: Colors.textWhite,
+    fontWeight: '600',
+    color: '#FFF',
     marginBottom: 8,
   },
   metricValueContainer: {
@@ -365,12 +384,12 @@ const styles = StyleSheet.create({
   },
   metricValue: {
     fontSize: 36,
-    fontWeight: '700' as const,
-    color: Colors.textWhite,
+    fontWeight: '700',
+    color: '#FFF',
   },
   metricUnit: {
     fontSize: 16,
-    color: Colors.textWhite,
+    color: '#FFF',
     opacity: 0.8,
   },
   progressBarContainer: {
@@ -388,13 +407,12 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: Colors.textWhite,
     borderRadius: 4,
   },
   progressText: {
     fontSize: 14,
-    fontWeight: '700' as const,
-    color: Colors.textWhite,
+    fontWeight: '700',
+    color: '#FFF',
     minWidth: 40,
     textAlign: 'right',
   },
@@ -411,16 +429,14 @@ const styles = StyleSheet.create({
   },
   quickButtonText: {
     fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.textWhite,
+    fontWeight: '600',
+    color: '#FFF',
   },
   tipsCard: {
     flexDirection: 'row',
-    backgroundColor: Colors.card,
     borderRadius: 16,
     padding: 16,
     marginTop: 10,
-    shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -431,22 +447,16 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   tipsTitle: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-    color: Colors.text,
+    fontWeight: '700',
     marginBottom: 4,
   },
   tipsDescription: {
-    fontSize: 14,
-    color: Colors.textSecondary,
     lineHeight: 20,
   },
   googleFitCard: {
     marginBottom: 20,
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: Colors.cardShadow,
-    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 6,
@@ -472,19 +482,18 @@ const styles = StyleSheet.create({
   },
   googleFitTitle: {
     fontSize: 24,
-    fontWeight: '700' as const,
-    color: Colors.textWhite,
+    fontWeight: '700',
+    color: '#FFF',
     marginBottom: 8,
   },
   googleFitDescription: {
     fontSize: 16,
-    color: Colors.textWhite,
+    color: '#FFF',
     opacity: 0.9,
     lineHeight: 22,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: Colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -492,7 +501,6 @@ const styles = StyleSheet.create({
   modalContent: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: Colors.card,
     borderRadius: 20,
     padding: 24,
   },
@@ -503,20 +511,15 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: Colors.text,
+    fontWeight: '700',
   },
   modalInput: {
-    backgroundColor: Colors.backgroundSecondary,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 16,
-    color: Colors.text,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: Colors.border,
   },
   modalButton: {
     borderRadius: 12,
@@ -527,8 +530,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalButtonText: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-    color: Colors.textWhite,
+    fontWeight: '700',
   },
 });
