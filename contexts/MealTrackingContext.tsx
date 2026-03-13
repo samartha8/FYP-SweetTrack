@@ -45,7 +45,7 @@ export type DailyNutrition = {
   mealsCount: number;
 };
 
-const STORAGE_KEY = '@sweettrack_meal_logs';
+const BASE_STORAGE_KEY = '@sweettrack_meal_logs';
 
 const normalizeApiUrl = (url: string) => {
   const trimmed = url.replace(/\/$/, '');
@@ -67,62 +67,114 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+export const fixupImageUrl = (url?: string) => {
+  if (!url || !url.startsWith('http')) return url;
+  const apiHost = API_BASE_URL.split('/')[2];
+  // Replace anything between http:// and the first /uploads or similar path with current apiHost
+  // This handles localhost, 127.0.0.1, or stale IP addresses
+  return url.replace(/https?:\/\/([^\/]+)/, `http://${apiHost}`);
+};
+
 export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedDietPlan, setSelectedDietPlan] = useState<string>('balanced');
-  const { ensureAccessToken } = useUser();
+  const { user, ensureAccessToken, isLoading: isAuthLoading } = useUser();
+
+  const getUserStorageKey = (userId: string) => `${BASE_STORAGE_KEY}_${userId}`;
 
   useEffect(() => {
-    loadMealLogs();
-  }, []);
+    // Wait for UserContext to finish loading initial state
+    if (isAuthLoading) return;
 
-  const loadMealLogs = async () => {
+    if (user?.id) {
+      loadMealLogs(user.id);
+    } else {
+      // Only clear if we are definitely not logged in
+      setMealLogs([]);
+    }
+  }, [user?.id, isLoading]);
+
+  const saveMealLogs = async (logs: MealLog[], userId: string) => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      await AsyncStorage.setItem(getUserStorageKey(userId), JSON.stringify(logs));
+    } catch (error) {
+      console.error('Error saving meal logs:', error);
+    }
+  };
+
+  const loadMealLogs = async (userId: string, isRetry = false) => {
+    try {
+      setIsLoading(true);
+      const storageKey = getUserStorageKey(userId);
+      const stored = await AsyncStorage.getItem(storageKey);
+
       if (stored) {
-        setMealLogs(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        // Ensure image URIs are fixed up even for cached data
+        const fixed = parsed.map((log: any) => ({
+          ...log,
+          imageUri: fixupImageUrl(log.imageUri)
+        }));
+        setMealLogs(fixed);
+      } else if (!isRetry) {
+        // Only reset if first load and no storage found
+        setMealLogs([]);
       }
+
       // Fetch latest from backend if token exists
-      const token = await ensureAccessToken?.();
+      const token = await ensureAccessToken?.(isRetry);
       if (token) {
+        console.log(`[MealTracking] Fetching logs for user ${userId} from backend...`);
         const res = await fetch(`${API_BASE_URL}/meals`, {
           headers: { Authorization: `Bearer ${token}` }
         });
+
+        if (res.status === 401 && !isRetry) {
+          console.warn('[MealTracking] 401 Unauthorized on load - retrying with fresh token');
+          return loadMealLogs(userId, true);
+        }
+
         const data = await res.json();
+
         if (res.ok && data.success && data.mealLogs) {
+          console.log(`[MealTracking] Received ${data.mealLogs.length} logs from backend`);
+
           const normalized = data.mealLogs.map((log: any) => ({
             id: log._id,
             backendId: log._id,
             date: log.loggedAt || log.createdAt,
-            imageUri: log.imageUrl,
+            imageUri: fixupImageUrl(log.imageUrl),
             foodItems: log.foodItems || [],
             nutritionalInfo: log.nutritionalInfo,
             servingSize: log.servingSize,
             mealType: log.mealType,
             notes: log.notes,
           }));
-          setMealLogs(normalized);
-          await saveMealLogs(normalized);
+
+          setMealLogs(prev => {
+            const backendIds = new Set<string>(normalized.map((m: any) => m.id));
+            const localOnly = prev.filter((m: MealLog) => !m.backendId || !backendIds.has(m.backendId));
+            const merged = [...normalized, ...localOnly].sort((a, b) =>
+              new Date(b.date).getTime() - new Date(a.date).getTime()
+            );
+
+            saveMealLogs(merged, userId);
+            return merged;
+          });
         }
       }
     } catch (error) {
-      console.error('Error loading meal logs:', error);
+      console.error('[MealTracking] Failed to load logs:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const saveMealLogs = async (logs: MealLog[]) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
-    } catch (error) {
-      console.error('Error saving meal logs:', error);
-    }
-  };
+  const addMealLog = useCallback(async (meal: Omit<MealLog, 'id' | 'date'> & { imageFileUri?: string }, isRetry = false): Promise<MealLog> => {
+    const token = await ensureAccessToken?.(isRetry);
+    const isServerUrl = meal.imageUri?.startsWith('http') && !meal.imageUri?.includes('file://');
 
-  const addMealLog = useCallback(async (meal: Omit<MealLog, 'id' | 'date'> & { imageFileUri?: string }) => {
-    const token = await ensureAccessToken?.();
     const form = new FormData();
     form.append('mealType', meal.mealType);
     form.append('foodItems', JSON.stringify(meal.foodItems || []));
@@ -131,7 +183,7 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
     if (meal.notes) form.append('notes', meal.notes);
     form.append('loggedAt', new Date().toISOString());
 
-    if (meal.imageUri) {
+    if (meal.imageUri && !isServerUrl) {
       const uriParts = meal.imageUri.split('.');
       const ext = uriParts[uriParts.length - 1];
       form.append('image', {
@@ -139,8 +191,11 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
         name: `meal.${ext || 'jpg'}`,
         type: `image/${ext || 'jpeg'}`,
       } as any);
+    } else if (meal.imageUri && isServerUrl) {
+      form.append('imageUrl', meal.imageUri);
     }
 
+    console.log('[MealTracking] Adding meal log, imageUri:', meal.imageUri, 'isServerUrl:', isServerUrl);
     let backendLog: any = null;
     if (token) {
       try {
@@ -152,9 +207,17 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
           },
           body: form as any,
         });
+
+        if (res.status === 401 && !isRetry) {
+          console.warn('[MealTracking] 401 Unauthorized on add - retrying');
+          return addMealLog(meal, true);
+        }
+
         const data = await res.json();
+        console.log('[MealTracking] Backend response:', data?.success ? 'SUCCESS' : 'FAILED', data?.message);
         if (res.ok && data.success) {
           backendLog = data.mealLog;
+          console.log('[MealTracking] Backend imageUrl:', backendLog?.imageUrl);
         } else {
           console.error('Backend meal log failed:', data?.message);
         }
@@ -168,26 +231,28 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
       id: backendLog?._id || Date.now().toString(),
       backendId: backendLog?._id,
       date: backendLog?.loggedAt || new Date().toISOString(),
-      imageUri: backendLog?.imageUrl || meal.imageUri,
+      // Apply fixupImageUrl to the backend URI if present
+      imageUri: backendLog?.imageUrl ? fixupImageUrl(backendLog.imageUrl) : meal.imageUri,
     };
+    console.log('[MealTracking] Final newMeal imageUri:', newMeal.imageUri);
 
     setMealLogs(prev => {
       const updated = [newMeal, ...prev];
-      saveMealLogs(updated);
+      if (user?.id) saveMealLogs(updated, user.id);
       return updated;
     });
 
     return newMeal;
-  }, []);
+  }, [ensureAccessToken, user?.id]);
 
   const deleteMealLog = useCallback(async (mealId: string, backendId?: string) => {
     setMealLogs(prev => {
       const updated = prev.filter(meal => meal.id !== mealId && meal.backendId !== backendId);
-      saveMealLogs(updated);
+      if (user?.id) saveMealLogs(updated, user.id);
       return updated;
     });
 
-    const token = await AsyncStorage.getItem('@sweettrack_token');
+    const token = await ensureAccessToken?.();
     if (token && backendId) {
       try {
         await fetch(`${API_BASE_URL}/meals/${backendId}`, {
@@ -198,30 +263,34 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
         console.error('Backend delete meal log failed:', error);
       }
     }
-  }, []);
+  }, [ensureAccessToken, user?.id]);
 
   const updateMealLog = useCallback(async (mealId: string, updates: Partial<MealLog>) => {
     setMealLogs(prev => {
       const updated = prev.map(meal =>
         meal.id === mealId ? { ...meal, ...updates } : meal
       );
-      saveMealLogs(updated);
+      if (user?.id) saveMealLogs(updated, user.id);
       return updated;
     });
   }, []);
 
   const getTodayMeals = useMemo(() => {
-    const today = new Date().toDateString();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
     return mealLogs.filter(meal => {
-      const mealDate = new Date(meal.date).toDateString();
-      return mealDate === today;
+      const mealDate = new Date(meal.date);
+      return mealDate >= today && mealDate < tomorrow;
     });
   }, [mealLogs]);
 
   const getWeekMeals = useMemo(() => {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
-    
+
     return mealLogs.filter(meal => {
       const mealDate = new Date(meal.date);
       return mealDate >= weekAgo;
@@ -229,7 +298,7 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   }, [mealLogs]);
 
   const todayNutrition = useMemo(() => {
-    return getTodayMeals.reduce((acc, meal) => ({
+    const totals = getTodayMeals.reduce((acc, meal) => ({
       calories: acc.calories + meal.nutritionalInfo.calories,
       protein: acc.protein + meal.nutritionalInfo.protein,
       carbs: acc.carbs + meal.nutritionalInfo.carbs,
@@ -246,40 +315,50 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
       fiber: 0,
       sodium: 0,
     });
+
+    return {
+      calories: Math.round(totals.calories),
+      protein: parseFloat(totals.protein.toFixed(1)),
+      carbs: parseFloat(totals.carbs.toFixed(1)),
+      fat: parseFloat(totals.fat.toFixed(1)),
+      sugar: parseFloat(totals.sugar.toFixed(1)),
+      fiber: parseFloat(totals.fiber.toFixed(1)),
+      sodium: parseFloat(totals.sodium.toFixed(1)),
+    };
   }, [getTodayMeals]);
 
   const weeklyStats = useMemo((): WeeklyStats => {
-    const totalCalories = getWeekMeals.reduce((sum, meal) => 
+    const totalCalories = getWeekMeals.reduce((sum, meal) =>
       sum + meal.nutritionalInfo.calories, 0
     );
-    const totalProtein = getWeekMeals.reduce((sum, meal) => 
+    const totalProtein = getWeekMeals.reduce((sum, meal) =>
       sum + meal.nutritionalInfo.protein, 0
     );
-    const totalCarbs = getWeekMeals.reduce((sum, meal) => 
+    const totalCarbs = getWeekMeals.reduce((sum, meal) =>
       sum + meal.nutritionalInfo.carbs, 0
     );
-    const totalFat = getWeekMeals.reduce((sum, meal) => 
+    const totalFat = getWeekMeals.reduce((sum, meal) =>
       sum + meal.nutritionalInfo.fat, 0
     );
 
     return {
-      totalCalories,
+      totalCalories: Math.round(totalCalories),
       avgCalories: getWeekMeals.length > 0 ? Math.round(totalCalories / 7) : 0,
-      totalProtein: Math.round(totalProtein),
-      totalCarbs: Math.round(totalCarbs),
-      totalFat: Math.round(totalFat),
+      totalProtein: parseFloat(totalProtein.toFixed(1)),
+      totalCarbs: parseFloat(totalCarbs.toFixed(1)),
+      totalFat: parseFloat(totalFat.toFixed(1)),
       mealsLogged: getWeekMeals.length,
     };
   }, [getWeekMeals]);
 
   const getDailyNutritionForWeek = useMemo((): DailyNutrition[] => {
     const days: DailyNutrition[] = [];
-    
+
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
       const dateString = date.toDateString();
-      
+
       const dayMeals = mealLogs.filter(meal => {
         const mealDate = new Date(meal.date).toDateString();
         return mealDate === dateString;
@@ -313,7 +392,7 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
 
   const clearAllMealLogs = useCallback(async () => {
     try {
-      await AsyncStorage.removeItem(STORAGE_KEY);
+      await AsyncStorage.removeItem(BASE_STORAGE_KEY);
       setMealLogs([]);
     } catch (error) {
       console.error('Error clearing meal logs:', error);
