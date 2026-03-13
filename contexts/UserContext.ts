@@ -5,6 +5,11 @@ import * as Notifications from 'expo-notifications';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Platform } from 'react-native';
+import {
+  AUTH_URL,
+  GOOGLE_FIT_URL,
+  API_BASE_URL
+} from '../constants/Api';
 
 export type User = {
   id: string;
@@ -86,56 +91,7 @@ const getExpoProjectId = () => {
 };
 
 // --- Backend API URL ---
-const normalizeApiUrl = (url: string) => {
-  const trimmed = url.replace(/\/$/, '');
-  return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
-};
-
-const getApiBaseUrl = () => {
-  // Highest priority: explicit env override
-  const envBase = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL;
-  if (envBase) return normalizeApiUrl(envBase);
-
-  // Web: use localhost
-  if (Platform.OS === 'web') {
-    return 'http://localhost:5000/api';
-  }
-
-  // ✅ ANDROID EMULATOR: Must use 10.0.2.2
-  if (Platform.OS === 'android') {
-    // Check if running on emulator vs physical device
-    const isEmulator = Constants.deviceName?.includes('sdk') ||
-      Constants.deviceName?.includes('emulator') ||
-      !Constants.deviceName; // null deviceName often means emulator
-
-    if (isEmulator) {
-      console.log('🤖 Android Emulator detected - Using 10.0.2.2');
-      return 'http://10.0.2.2:5000/api';
-    }
-
-    // Physical Android device - use network IP from app.json
-    const appJsonIP = Constants.expoConfig?.extra?.apiHost;
-    if (appJsonIP && appJsonIP !== 'auto-detect') {
-      console.log('📱 Android Physical Device - Using:', appJsonIP);
-      return `http://${appJsonIP}:5000/api`;
-    }
-  }
-
-  // iOS Simulator: use localhost
-  if (Platform.OS === 'ios') {
-    console.log('🍎 iOS Simulator - Using localhost');
-    return 'http://localhost:5000/api';
-  }
-
-  // Fallback for physical devices
-  const appJsonIP = Constants.expoConfig?.extra?.apiHost || '192.168.1.76';
-  console.log('📱 Physical Device Fallback - Using:', appJsonIP);
-  return `http://${appJsonIP}:5000/api`;
-};
-
-const API_BASE_URL = getApiBaseUrl();
-const AUTH_URL = `${API_BASE_URL}/auth`;
-const GOOGLE_FIT_URL = `${API_BASE_URL}/google-fit`;
+// --- User Context ---
 
 // --- User Context ---
 export const [UserProvider, useUser] = createContextHook(() => {
@@ -151,12 +107,14 @@ export const [UserProvider, useUser] = createContextHook(() => {
 
   const persistAuthPayload = useCallback(async (nextUser: User & { healthData?: any }, accessToken: string, refreshToken: string) => {
     // Flatten healthData if present (from backend)
-    let userToSave = { ...nextUser };
+    let userToSave: any = { ...nextUser };
     if (nextUser.healthData) {
-      const { _id, user: _u, __v, createdAt, updatedAt, ...healthFields } = nextUser.healthData;
+      // If healthData is a nested object, flatten its fields into the user object
+      const healthObj = typeof nextUser.healthData === 'object' ? nextUser.healthData : {};
+      const { _id, user: _u, __v, createdAt, updatedAt, ...healthFields } = healthObj;
       userToSave = { ...userToSave, ...healthFields };
-      // Remove the nested healthData object to keep state clean
-      delete userToSave.healthData;
+      // Keep a reference to healthData just in case, but prioritize flat fields
+      // delete userToSave.healthData;
     }
 
     // IMPORTANT: Set state synchronously BEFORE async storage operations
@@ -182,10 +140,17 @@ export const [UserProvider, useUser] = createContextHook(() => {
   }, []);
 
   const clearLocalState = useCallback(async () => {
+    // Get current user ID before clearing to target their specific meal logs
+    const currentUserId = user?.id;
+
     const keysToClear = [
       ...Object.values(STORAGE_KEYS),
       ...EXTERNAL_STORAGE_KEYS,
     ];
+
+    if (currentUserId) {
+      keysToClear.push(`@sweettrack_meal_logs_${currentUserId}`);
+    }
 
     await AsyncStorage.multiRemove(keysToClear);
     setUser(null);
@@ -541,12 +506,12 @@ export const [UserProvider, useUser] = createContextHook(() => {
     }
   }, [clearLocalState]);
 
-  const ensureAccessToken = useCallback(async () => {
+  const ensureAccessToken = useCallback(async (forceRefresh = false) => {
     // First, try to get the current token
     const currentToken = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
 
-    // If no token, try to refresh
-    if (!currentToken) {
+    // If no token or forced refresh
+    if (!currentToken || forceRefresh) {
       const refreshed = await refreshSession();
       if (refreshed.success) {
         return await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
@@ -556,10 +521,6 @@ export const [UserProvider, useUser] = createContextHook(() => {
     }
 
     // Token exists - return it immediately.
-    // We TRUST that if it's expired, the API call using it will fail (401),
-    // and the specific component can handle the logout or retry if needed.
-    // Automatically refreshing here causes an infinite loop because:
-    // refresh -> setUser -> Component Re-render -> ensureAccessToken -> refresh...
     return currentToken;
   }, [refreshSession]);
 
@@ -597,15 +558,20 @@ export const [UserProvider, useUser] = createContextHook(() => {
   }, []);
 
   const updateUser = useCallback(async (updates: Partial<User>) => {
-    const currentUser = user || { id: '', name: '', email: '' };
-    const updatedUser = { ...currentUser, ...updates };
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser));
-      setUser(updatedUser);
+      setUser(prev => {
+        const currentUser = prev || { id: '', name: '', email: '' } as User;
+        const updatedUser = { ...currentUser, ...updates };
+        // Sync to storage
+        AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser)).catch(e =>
+          console.error('Error syncing user to storage:', e)
+        );
+        return updatedUser;
+      });
     } catch (error) {
       console.error('Error updating user:', error);
     }
-  }, [user]);
+  }, []);
 
   const addRewardPoints = useCallback(async (points: number) => {
     setRewardsPoints(prev => {
