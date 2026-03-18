@@ -79,7 +79,7 @@ const getQuickReplies = (t: any) => [
 export default function ChatbotScreen() {
   const insets = useSafeAreaInsets();
   const { t, language } = useTranslation();
-  const { user } = useUser();
+  const { user, ensureAccessToken } = useUser();
   const { colors, scale } = useTheme();
 
   const QUICK_REPLIES = useMemo(() => getQuickReplies(t), [t]);
@@ -153,9 +153,14 @@ export default function ChatbotScreen() {
           content: msg.text
         }));
 
+        const token = await ensureAccessToken();
+        
         const res = await fetch(`${API_BASE_URL}/chatbot`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify({
             message: messageText,
             riskLevel: user?.medicalHistory?.length ? 'Higher Risk' : 'General',
@@ -246,14 +251,37 @@ export default function ChatbotScreen() {
                 {message.sender === 'bot' ? t.chatbot.aiName : t.chatbot.you}
               </Text>
             </View>
-            <Text
-              style={[
-                styles.messageText,
-                message.sender === 'user' ? themed.userMessageText : themed.messageText,
-              ]}
-            >
-              {message.text}
-            </Text>
+            <View style={styles.messageContent}>
+              <Text
+                style={[
+                  styles.messageText,
+                  message.sender === 'user' ? themed.userMessageText : themed.messageText,
+                ]}
+              >
+                {(() => {
+                  if (message.sender === 'user') return message.text;
+                  
+                  // Clean up list markers (convert * to •)
+                  const cleanedText = message.text.replace(/^\s*\*\s/gm, '• ');
+                  
+                  // Simple markdown bold parser for **text**
+                  const parts = cleanedText.split(/(\*\*.*?\*\*)/g);
+                  return parts.map((part, index) => {
+                    if (part.startsWith('**') && part.endsWith('**')) {
+                      return (
+                        <Text 
+                          key={index} 
+                          style={{ fontWeight: 'bold' }}
+                        >
+                          {part.slice(2, -2)}
+                        </Text>
+                      );
+                    }
+                    return part;
+                  });
+                })()}
+              </Text>
+            </View>
             <Text
               style={[
                 styles.messageTime,
@@ -365,8 +393,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 6,
   },
+  messageContent: {
+    marginTop: 4,
+  },
   messageText: {
     fontSize: 15,
+    lineHeight: 22,
   },
   messageTime: {
     fontSize: 11,
