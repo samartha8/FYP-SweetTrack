@@ -70,7 +70,7 @@ export default function MealLogScreen() {
   const [selectedMealType, setSelectedMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>('breakfast');
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isCorrectionModalVisible, setIsCorrectionModalVisible] = useState(false);
-  const [allFoodClasses, setAllFoodClasses] = useState<string[]>([]);
+  const [allFoodClasses, setAllFoodClasses] = useState<{id: string, name: string}[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -155,31 +155,20 @@ export default function MealLogScreen() {
       }
 
       // Get auth token
-      let token = await ensureAccessToken();
+      const token = await ensureAccessToken();
+      if (!token) throw new Error('Authentication required');
 
-      const fetchAnalysis = async (authToken: string) => {
-        return fetch(`${MEAL_URL}/analyze`, {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Authorization': `Bearer ${authToken || ''}`,
-          },
-          body: formData,
-        });
-      };
+      const response = await fetch(`${MEAL_URL}/analyze`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
 
-      let response = await fetchAnalysis(token || '');
-
-      // Handle 401 Unauthorized (Token Expired)
       if (response.status === 401) {
-        console.warn("Token expired, attempting refresh for meal analysis...");
-        token = await ensureAccessToken(true); // Force refresh
-        if (token) {
-          console.log("Token refreshed, retrying meal analysis...");
-          response = await fetchAnalysis(token);
-        } else {
-          console.error("Refresh failed - no token available for retry.");
-        }
+        throw new Error('Session expired');
       }
 
       if (!response.ok) {
@@ -431,11 +420,11 @@ export default function MealLogScreen() {
     }, { calories: 0, carbs: 0, protein: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0 });
   };
 
-  const handleCorrectItem = async (foodName: string) => {
+  const handleCorrectItem = async (foodId: string) => {
     try {
       setIsCorrectionModalVisible(false);
       const token = await ensureAccessToken();
-      const response = await fetch(`${MEAL_URL}/nutrition-lookup?name=${encodeURIComponent(foodName)}`, {
+      const response = await fetch(`${MEAL_URL}/nutrition-lookup?name=${encodeURIComponent(foodId)}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -487,7 +476,7 @@ export default function MealLogScreen() {
 
   const filteredFoodClasses = useMemo(() => {
     return (allFoodClasses || []).filter(c =>
-      c && typeof c === 'string' && c.toLowerCase().includes(searchQuery.toLowerCase())
+      c && c.name && c.name.toLowerCase().includes(searchQuery.toLowerCase())
     ).slice(0, 50); // Limit results for performance
   }, [allFoodClasses, searchQuery]);
 
@@ -919,15 +908,15 @@ export default function MealLogScreen() {
 
             <FlatList
               data={filteredFoodClasses}
-              keyExtractor={(item) => item}
+              keyExtractor={(item) => item.id}
               style={styles.foodClassList}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[styles.foodClassItem, themed.foodClassItem]}
-                  onPress={() => handleCorrectItem(item)}
+                  onPress={() => handleCorrectItem(item.id)}
                 >
                   <Text style={[styles.foodClassText, themed.foodClassText]}>
-                    {item.replace(/_/g, ' ')}
+                    {item.name}
                   </Text>
                 </TouchableOpacity>
               )}
