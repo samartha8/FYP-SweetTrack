@@ -1,8 +1,8 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ColorValue, Platform } from 'react-native';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Heart, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCrossed, Camera, BarChart3, List, Link, ChevronRight } from 'lucide-react-native';
+import { Heart, Brain, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCrossed, Camera, BarChart3, List, Link, ChevronRight } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from '@/hooks/use-translation';
 import { useUser } from '@/contexts/UserContext';
@@ -12,13 +12,22 @@ import { useTheme } from '@/contexts/SettingsContext';
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 60) / 2;
 
+// Persistent throttle ref across mounts
+let globalLastFetch = 0;
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, healthMetrics, dailyGoals, rewardsPoints, streak, isGoogleFitConnected, connectGoogleFit, ensureAccessToken } = useUser();
   const { colors, scale } = useTheme(); // Global Theme Hook
   const { t } = useTranslation();
-  const [predictionData, setPredictionData] = useState({ riskScore: 0, riskLevel: 'Low Risk', hasHistory: false });
+  const [predictionData, setPredictionData] = useState({ 
+    riskScore: 0, 
+    riskLevel: 'Low Risk', 
+    hasHistory: false,
+    inputData: null as any,
+    insights: [] as string[]
+  });
 
   // Dynamic Styles
   const themed = useMemo(() => ({
@@ -46,26 +55,107 @@ export default function HomeScreen() {
     sectionLink: { fontSize: scale(14) },
   }), [colors, scale]);
 
+  const getHealthVal = useCallback((userObj: any, key: string, fallbackKey?: string) => {
+    if (!userObj) return undefined;
+    if (userObj[key] !== undefined) return userObj[key];
+    if (userObj.healthData && userObj.healthData[key] !== undefined) return userObj.healthData[key];
+    if (fallbackKey) {
+      if (userObj[fallbackKey] !== undefined) return userObj[fallbackKey];
+      if (userObj.healthData && userObj.healthData[fallbackKey] !== undefined) return userObj.healthData[fallbackKey];
+    }
+    return undefined;
+  }, []);
+
+  const currentHealth = useMemo(() => {
+    if (!user) return null;
+    const anyUser = user as any;
+    return {
+      age: Number(getHealthVal(anyUser, 'age') || 5),
+      sex: Number(getHealthVal(anyUser, 'sex') || 0),
+      bmi: Number(getHealthVal(anyUser, 'bmi') || 0),
+      highBP: Number(getHealthVal(anyUser, 'highBP') || 0),
+      highChol: Number(getHealthVal(anyUser, 'highChol') || 0),
+      smoker: Number(getHealthVal(anyUser, 'smoker') || 0),
+      physActivity: Number(getHealthVal(anyUser, 'physActivity') || 0),
+      genHlth: Number(getHealthVal(anyUser, 'genHlth') || 3),
+      heartDiseaseOrAttack: Number(getHealthVal(anyUser, 'heartDiseaseOrAttack', 'heartDisease') || 0),
+      pregnancies: Number(getHealthVal(anyUser, 'pregnancies') || 0),
+      height: Number(getHealthVal(anyUser, 'height') || 0),
+      weight: Number(getHealthVal(anyUser, 'weight') || 0),
+    };
+  }, [user, getHealthVal]);
+
+  const isUnchanged = useMemo(() => {
+    if (!predictionData.inputData || !currentHealth) return false;
+    
+    const isSame = (val1: any, val2: any) => {
+      const n1 = (val1 === undefined || val1 === null) ? 0 : Number(val1);
+      const n2 = (val2 === undefined || val2 === null) ? 0 : Number(val2);
+      return Math.abs(n1 - n2) < 0.001;
+    };
+
+    const prevData = predictionData.inputData || {} as any;
+    
+    // Aligned with prediction.tsx
+    return (
+      isSame(currentHealth.bmi, prevData.bmi) &&
+      isSame(currentHealth.age, prevData.age) &&
+      isSame(currentHealth.sex, prevData.sex) &&
+      isSame(currentHealth.highBP, prevData.highBP) &&
+      isSame(currentHealth.highChol, prevData.highChol) &&
+      isSame(currentHealth.smoker, prevData.smoker) &&
+      isSame(currentHealth.physActivity, prevData.physActivity) &&
+      isSame(currentHealth.genHlth, prevData.genHlth) &&
+      isSame(currentHealth.heartDiseaseOrAttack, prevData.heartDiseaseOrAttack ?? prevData.heartDisease) &&
+      isSame(currentHealth.pregnancies, prevData.pregnancies) &&
+      isSame(currentHealth.height, prevData.height ?? currentHealth.height) &&
+      isSame(currentHealth.weight, prevData.weight ?? currentHealth.weight)
+    );
+  }, [predictionData.inputData, currentHealth]);
+
+  /* lastFetchRef and isFetchingRef moved/removed */
+  const isFetchingRef = useRef(false);
+
   useFocusEffect(
     useCallback(() => {
-      const fetchPrediction = async () => {
+      const now = Date.now();
+      // Throttling: Only fetch if 60s have passed since last successful fetch
+      // EXCEPT: If the analysis is outdated (isUnchanged is false), we always want to try to fetch the latest
+      if (isFetchingRef.current || (now - globalLastFetch < 60000 && isUnchanged)) {
+        return;
+      }
+
+      const fetchPredictionPrev = async (retryLimit = 1) => {
         try {
           if (!user) return;
+          isFetchingRef.current = true;
+          
           let token = await ensureAccessToken();
-          // Add timestamp to prevent caching
-          let response = await fetch(`${DIABETES_URL}/latest?t=${Date.now()}`, {
-            headers: { 'Authorization': `Bearer ${token || ''}` }
+          if (!token) {
+            isFetchingRef.current = false;
+            return;
+          }
+
+          if (__DEV__) console.log(`🏠 [Home] Fetching latest prediction preview (Attempt: ${2 - retryLimit})...`);
+          
+          // Only update globalLastFetch on first attempt or success
+          if (retryLimit === 1) globalLastFetch = now;
+
+          const response = await fetch(`${DIABETES_URL}/latest?t=${now}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
           });
 
-          // ✅ 401 Retry Logic
-          if (response.status === 401) {
-            console.log('Home: Token expired, refreshing...');
-            token = await ensureAccessToken(true);
+          if (response.status === 401 && retryLimit > 0) {
+            if (__DEV__) console.warn("🏠 [Home] 401 Unauthorized - forcing token refresh and retrying...");
+            token = await ensureAccessToken(true); // Force refresh
             if (token) {
-              response = await fetch(`${DIABETES_URL}/latest?t=${Date.now()}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-              });
+              return fetchPredictionPrev(retryLimit - 1);
             }
+          }
+
+          if (!response.ok) {
+            if (__DEV__) console.warn(`🏠 [Home] Fetch failed with status ${response.status}`);
+            return;
           }
 
           const json = await response.json();
@@ -73,16 +163,21 @@ export default function HomeScreen() {
             setPredictionData({
               riskScore: json.riskScore,
               riskLevel: json.riskLevel,
-              hasHistory: true
+              hasHistory: true,
+              inputData: json.inputData,
+              insights: json.insights || []
             });
+            globalLastFetch = Date.now();
           }
         } catch (e) {
           console.log('Failed to fetch prediction preview', e);
+        } finally {
+          isFetchingRef.current = false;
         }
       };
 
-      fetchPrediction();
-    }, [user, ensureAccessToken])
+      fetchPredictionPrev();
+    }, [user?.id, user?.email, ensureAccessToken])
   );
 
   const { riskScore, riskLevel } = predictionData;
@@ -102,6 +197,8 @@ export default function HomeScreen() {
     { icon: List, label: t.home.viewAllMeals, route: '/view-all-meals', gradient: colors.gradient.error },
   ];
 
+  console.log('Home Component User State:', user ? { id: user.id || (user as any)._id, name: user.name } : 'Null');
+
   return (
     <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
       <ScrollView
@@ -111,7 +208,9 @@ export default function HomeScreen() {
       >
         <View style={[styles.header, themed.header]}>
           <View>
-            <Text style={[styles.greeting, themed.greeting]}>{t.home.greeting}, {user?.name || 'User'}!</Text>
+            <Text style={[styles.greeting, themed.greeting]}>
+              {t.home.greeting}, {user?.name ? user.name : 'User'}!
+            </Text>
             <Text style={[styles.subtitle, themed.subtitle]}>{t.home.greetingSub}</Text>
           </View>
         </View>
@@ -122,25 +221,34 @@ export default function HomeScreen() {
           onPress={() => router.push('/prediction' as any)}
         >
           <LinearGradient
-            colors={[riskColor, riskColor + '80'] as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+            colors={[riskColor, riskColor + '90'] as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
             style={styles.riskGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
             <View style={styles.riskHeader}>
-              <Heart size={32} color={colors.textWhite} strokeWidth={2} />
-              <View style={styles.riskBadge}>
-                <Text style={[styles.riskBadgeText, themed.riskBadgeText]}>
-                  {riskLevel === 'Low Risk' ? t.home.riskLow : riskLevel === 'Medium Risk' ? t.home.riskMedium : t.home.riskHigh}
-                </Text>
+              <Brain size={32} color={colors.textWhite} strokeWidth={2} />
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {!isUnchanged && (
+                  <View style={[styles.riskBadge, { backgroundColor: 'rgba(255,255,255,0.3)' }]}>
+                    <Text style={[styles.riskBadgeText, { color: '#ffffff', fontWeight: '800' }]}>
+                      {t.prediction?.outdated || "OUTDATED"}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.riskBadge}>
+                  <Text style={[styles.riskBadgeText, themed.riskBadgeText]}>
+                    {riskLevel === 'High Risk' ? t.home.riskHigh : riskLevel === 'Medium Risk' ? t.home.riskMedium : t.home.riskLow}
+                  </Text>
+                </View>
               </View>
             </View>
             <Text style={[styles.riskScore, themed.riskScore]}>{riskScore}%</Text>
-            <Text style={[styles.riskLabel, themed.riskLabel]}>{t.home.riskScore}</Text>
-            <Text style={[styles.riskDescription, themed.riskDescription]}>
-              {riskLevel === 'Low Risk'
-                ? t.home.riskLowDesc
-                : t.home.riskHighDesc}
+            <Text style={[styles.riskLabel, themed.riskLabel]}>{t.prediction?.score || "Diabetes Risk Score"}</Text>
+            <Text style={[styles.riskDescription, themed.riskDescription]} numberOfLines={2}>
+              {!isUnchanged 
+                ? (t.prediction?.factorsDesc || "Health metrics updated. Run new analysis for accuracy.")
+                : (riskLevel === 'Low Risk' ? t.prediction?.lowRiskDesc : t.prediction?.highRiskDesc)}
             </Text>
           </LinearGradient>
         </TouchableOpacity>
