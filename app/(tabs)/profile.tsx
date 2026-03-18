@@ -22,12 +22,20 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const fetchLatestRecord = async () => {
+      const fetchLatestRecord = async (retryLimit = 1) => {
         try {
-          const token = await ensureAccessToken();
+          let token = await ensureAccessToken();
           const response = await fetch(`${DIABETES_URL}/latest`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
+
+          if (response.status === 401 && retryLimit > 0) {
+            token = await ensureAccessToken(true); // Force refresh
+            if (token) {
+              return fetchLatestRecord(retryLimit - 1);
+            }
+          }
+
           const json = await response.json();
           if (json.success && json.hasHistory) {
             setLatestRecord(json);
