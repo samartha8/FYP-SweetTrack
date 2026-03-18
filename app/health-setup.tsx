@@ -245,6 +245,7 @@ export default function HealthSetupScreen() {
       };
 
       // 1. Save to Backend (Crucial for persistence)
+      console.log("🚀 [HealthSetup] SUBMITTING CLEAN DATA:", JSON.stringify(healthData, null, 2));
       try {
         const token = await ensureAccessToken();
         const saveRes = await fetch(HEALTH_URL, {
@@ -268,57 +269,26 @@ export default function HealthSetupScreen() {
       }
 
       // 2. Update Local Context
-      if (!user) {
-        await updateUser({
-          id: Date.now().toString(),
-          name: 'User',
-          email: '',
-          ...healthData,
-        } as any);
-      } else {
+      if (user) {
         await updateUser(healthData as any);
       }
 
       await completeHealthSetup();
 
-      // Trigger initial prediction
+      // 3. Trigger initial prediction
       try {
         console.log("Attempting initial prediction with data:", JSON.stringify(healthData, null, 2));
         const token = await ensureAccessToken();
-        const predictionBody = {
-          ...healthData,
-          // Explicitly map fields to match python script/controller expectations if needed
-          HighBP: healthData.highBP,
-          HighChol: healthData.highChol,
-          CholCheck: 1, // Assume check done if they know status? Or default 1
-          BMI: healthData.bmi,
-          Smoker: healthData.smoker,
-          Stroke: 0, // Default for new users?
-          HeartDiseaseorAttack: healthData.heartDiseaseOrAttack,
-          PhysActivity: healthData.physActivity,
-          Fruits: 1, // Defaults
-          Veggies: 1, // Defaults
-          HvyAlcoholConsump: 0, // Defaults
-          AnyHealthcare: 1, // Defaults
-          NoDocbcCost: 0, // Defaults
-          GenHlth: healthData.genHlth,
-          MentHlth: 0, // Defaults
-          PhysHlth: 0, // Defaults
-          DiffWalk: 0, // Defaults
-          Sex: healthData.sex,
-          Age: healthData.age,
-          Education: 5, // Defaults
-          Income: 6, // Defaults
-          Glucose: healthData.bloodGlucoseEstimated || 85 // Fallback if empty
-        };
-
+        
+        // Only send what we actually collected. 
+        // We'll let the backend/python script handle the feature padding/normalization.
         const res = await fetch(`${DIABETES_URL}/predict`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token || ''}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(predictionBody)
+          body: JSON.stringify(healthData)
         });
 
         const resJson = await res.json();
