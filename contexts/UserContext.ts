@@ -1,4 +1,4 @@
-import { createContextHook } from '@/hooks/use-context-hook';
+import { createContextHook } from '../hooks/use-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
@@ -8,7 +8,8 @@ import { Alert, Linking, Platform } from 'react-native';
 import {
   AUTH_URL,
   GOOGLE_FIT_URL,
-  API_BASE_URL
+  API_BASE_URL,
+  HEALTH_URL
 } from '../constants/Api';
 
 export type User = {
@@ -104,17 +105,34 @@ export const [UserProvider, useUser] = createContextHook(() => {
   const [rewardsPoints, setRewardsPoints] = useState<number>(0);
   const [streak, setStreak] = useState<number>(0);
   const [isGoogleFitConnected, setIsGoogleFitConnected] = useState<boolean>(false);
+  
+  // Single-flight refresh coordination
+  const refreshPromise = useMemo(() => ({ current: null as Promise<{ success: boolean; token?: string; errorCode?: string; message?: string }> | null }), []);
+  
+  // Track user ID in a ref to avoid dependency loops in callbacks
+  const userIdRef = useMemo(() => ({ current: null as string | null }), []);
+  useEffect(() => {
+    userIdRef.current = user?.id || null;
+  }, [user?.id]);
 
   const persistAuthPayload = useCallback(async (nextUser: User & { healthData?: any }, accessToken: string, refreshToken: string) => {
     // Flatten healthData if present (from backend)
     let userToSave: any = { ...nextUser };
-    if (nextUser.healthData) {
-      // If healthData is a nested object, flatten its fields into the user object
-      const healthObj = typeof nextUser.healthData === 'object' ? nextUser.healthData : {};
-      const { _id, user: _u, __v, createdAt, updatedAt, ...healthFields } = healthObj;
-      userToSave = { ...userToSave, ...healthFields };
-      // Keep a reference to healthData just in case, but prioritize flat fields
-      // delete userToSave.healthData;
+    const healthObj = typeof nextUser.healthData === 'object' ? nextUser.healthData : {};
+    const { _id, id: _hid, user: _u, __v, createdAt, updatedAt, ...healthFields } = healthObj;
+    
+    // Ensure id exists (map from _id if necessary)
+    const userId = nextUser.id || (nextUser as any)._id;
+    
+    userToSave = { 
+      ...userToSave, 
+      id: userId,
+      ...healthFields 
+    };
+
+    // Safety check: ensure name is never empty if it existed before
+    if (!userToSave.name && nextUser.name) {
+      userToSave.name = nextUser.name;
     }
 
     // IMPORTANT: Set state synchronously BEFORE async storage operations
@@ -140,8 +158,8 @@ export const [UserProvider, useUser] = createContextHook(() => {
   }, []);
 
   const clearLocalState = useCallback(async () => {
-    // Get current user ID before clearing to target their specific meal logs
-    const currentUserId = user?.id;
+    // Get current user ID from ref to avoid dependency loop
+    const currentUserId = userIdRef.current;
 
     const keysToClear = [
       ...Object.values(STORAGE_KEYS),
@@ -152,6 +170,8 @@ export const [UserProvider, useUser] = createContextHook(() => {
       keysToClear.push(`@sweettrack_meal_logs_${currentUserId}`);
     }
 
+    if (__DEV__) console.log('🧹 Clearing local auth state');
+    
     await AsyncStorage.multiRemove(keysToClear);
     setUser(null);
     setHasOnboarded(false);
@@ -161,49 +181,56 @@ export const [UserProvider, useUser] = createContextHook(() => {
     setRewardsPoints(0);
     setStreak(0);
     setIsGoogleFitConnected(false);
-  }, []);
+  }, []); // Empty dependencies - use refs for dynamic values
 
   const refreshSession = useCallback(async (refreshTokenOverride?: string) => {
-    const refreshToken = refreshTokenOverride || await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
-    if (!refreshToken) {
-      // No refresh token - clear any stale tokens
-      await clearLocalState();
-      return { success: false, message: 'No refresh token available' };
+    // If a refresh is already in progress, return the existing promise
+    if (refreshPromise.current) {
+      return refreshPromise.current;
     }
 
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 sec timeout
-
-      const res = await fetch(`${AUTH_URL}/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        // Only clear state if explicitly unauthorized or invalid token
-        if (res.status === 401 || res.status === 403 || data.errorCode === 'INVALID_REFRESH_TOKEN' || data.errorCode === 'INVALID_SIGNATURE') {
-          console.warn('Session expired or invalid - clearing state.');
-          await clearLocalState();
-          return { success: false, message: 'Session expired. Please login again.', errorCode: data.errorCode || 'INVALID_TOKEN' };
-        }
-
-        // For other errors (500s, etc), keep local state but return failure
-        console.warn('Refresh failed but session might still be valid locally:', data.message);
-        return { success: false, message: data.message || 'Unable to refresh session', errorCode: undefined };
+    const performRefresh = async () => {
+      const refreshToken = refreshTokenOverride || await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+      if (!refreshToken) {
+        await clearLocalState();
+        return { success: false, message: 'No refresh token available' };
       }
 
-      await persistAuthPayload(data.user, data.token, data.refreshToken);
-      return { success: true, token: data.token, errorCode: undefined };
-    } catch (error) {
-      console.error('Error refreshing session:', error);
-      // DO NOT clear local state on network error/timeout
-      return { success: false, message: 'Network error. Offline mode.', errorCode: 'NETWORK_ERROR' };
-    }
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const res = await fetch(`${AUTH_URL}/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          if (res.status === 401 || res.status === 403 || data.errorCode === 'INVALID_REFRESH_TOKEN' || data.errorCode === 'INVALID_SIGNATURE' || data.errorCode === 'VERSION_MISMATCH') {
+            console.warn(`Session expired or invalid (${data.errorCode || res.status}) - clearing state.`);
+            await clearLocalState();
+            return { success: false, message: 'Session expired. Please login again.', errorCode: data.errorCode || 'INVALID_TOKEN' };
+          }
+          return { success: false, message: data.message || 'Unable to refresh session', errorCode: undefined };
+        }
+
+        await persistAuthPayload(data.user, data.token, data.refreshToken);
+        return { success: true, token: data.token, errorCode: undefined };
+      } catch (error) {
+        console.error('Error refreshing session:', error);
+        return { success: false, message: 'Network error. Offline mode.', errorCode: 'NETWORK_ERROR' };
+      } finally {
+        // Clear the promise ref when done
+        refreshPromise.current = null;
+      }
+    };
+
+    refreshPromise.current = performRefresh();
+    return refreshPromise.current;
   }, [clearLocalState, persistAuthPayload]);
 
   const loadUserData = useCallback(async () => {
@@ -248,12 +275,12 @@ export const [UserProvider, useUser] = createContextHook(() => {
         if (!refreshed.success) {
           // If refresh failed due to invalid signature, tokens are already cleared
           // Don't restore user - they need to login again
-          if (refreshed.errorCode === 'INVALID_SIGNATURE') {
+          if (refreshed.errorCode === 'INVALID_SIGNATURE' || refreshed.errorCode === 'INVALID_TOKEN' || refreshed.errorCode === 'TOKEN_EXPIRED' || refreshed.errorCode === 'VERSION_MISMATCH') {
             // User state already cleared by refreshSession, just ensure it stays null
             setUser(null);
             setHasHealthSetup(false);
           } else if (storedUser) {
-            // Other errors - might be temporary, restore user but they'll need to refresh
+            // Other errors (like Network Offline) - might be temporary, restore user but they'll need to refresh
             const parsedUser = JSON.parse(storedUser);
             setUser(parsedUser);
             setHasHealthSetup(parsedUser.healthSetupCompleted || false);
@@ -507,20 +534,48 @@ export const [UserProvider, useUser] = createContextHook(() => {
   }, [clearLocalState]);
 
   const ensureAccessToken = useCallback(async (forceRefresh = false) => {
+    // Helper to check if token is expired
+    const isTokenExpired = (token: string) => {
+      try {
+        const parts = token.split('.');
+        if (parts.length !== 3) return true;
+        
+        // Use a simple base64 decoder for JWT payload
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          (Platform.OS === 'web' ? atob(base64) : require('buffer').Buffer.from(base64, 'base64').toString('binary'))
+            .split('')
+            .map((c: string) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join('')
+        );
+        
+        const payload = JSON.parse(jsonPayload);
+        const now = Math.floor(Date.now() / 1000);
+        
+        // Refresh if within 1 minute of expiry
+        return payload.exp && payload.exp < (now + 60);
+      } catch (e) {
+        console.warn('⚠️ Token expiration check failed:', e);
+        return true; // Conservative approach: treat as expired if check fails
+      }
+    };
+
     // First, try to get the current token
     const currentToken = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
 
-    // If no token or forced refresh
-    if (!currentToken || forceRefresh) {
+    // If no token or forced refresh or expired
+    if (!currentToken || forceRefresh || isTokenExpired(currentToken)) {
+      if (__DEV__ && !currentToken) console.log('🔐 No token found, refreshing session...');
+      if (__DEV__ && currentToken && !forceRefresh) console.log('⏰ Token expired, refreshing session...');
+      
       const refreshed = await refreshSession();
       if (refreshed.success) {
         return await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
       }
-      // If refresh failed due to signature error, tokens are already cleared
       return null;
     }
 
-    // Token exists - return it immediately.
     return currentToken;
   }, [refreshSession]);
 
@@ -559,19 +614,133 @@ export const [UserProvider, useUser] = createContextHook(() => {
 
   const updateUser = useCallback(async (updates: Partial<User>) => {
     try {
+      // 1. Update local state immediately for better UI responsiveness
       setUser(prev => {
-        const currentUser = prev || { id: '', name: '', email: '' } as User;
-        const updatedUser = { ...currentUser, ...updates };
+        if (!prev) return prev;
+
+        // Check if updates actually change anything
+        const hasChanges = Object.entries(updates).some(([key, value]) => {
+          return prev[key as keyof User] !== value;
+        });
+
+        if (!hasChanges) return prev;
+
+        const updatedUser = { ...prev, ...updates };
+        
+        // 1.1 Calculate BMI if height or weight change
+        if (updates.height !== undefined || updates.weight !== undefined) {
+          const h = parseFloat(updatedUser.height?.toString() || '0');
+          const w = parseFloat(updatedUser.weight?.toString() || '0');
+          if (h > 0 && w > 0) {
+            const hMeters = h / 100;
+            updatedUser.bmi = Number((w / (hMeters * hMeters)).toFixed(1));
+          }
+        }
+
+        // 1.2 Auto-calculate HbA1c and Glucose if relevant fields change
+        const derivedFields = ['bmi', 'age', 'genHlth', 'highChol', 'highBP'];
+        const shouldRecalculate = Object.keys(updates).some(key => derivedFields.includes(key)) || updates.height !== undefined || updates.weight !== undefined;
+        
+        if (shouldRecalculate) {
+          const bmi = parseFloat(updatedUser.bmi?.toString() || '0');
+          const age = parseFloat(updatedUser.age?.toString() || '0');
+          const genHlth = parseFloat(updatedUser.genHlth?.toString() || '0');
+          const highChol = parseFloat(updatedUser.highChol?.toString() || '0');
+          const highBP = parseFloat(updatedUser.highBP?.toString() || '0');
+
+          if (bmi > 0 && age > 0 && genHlth > 0) {
+            // HbA1c
+            const hba1c = 4.5 + (bmi - 25) * 0.03 + (age - 7) * 0.15 + genHlth * 0.4 + highChol * 0.8 + highBP * 0.6;
+            updatedUser.hba1cEstimated = Number(Math.max(3.5, Math.min(15.0, hba1c)).toFixed(2));
+            
+            // Glucose
+            const glucose = 85 + (bmi - 25) * 1.2 + (age - 7) * 3.0 + genHlth * 8 + highChol * 15 + highBP * 12;
+            updatedUser.bloodGlucoseEstimated = Number(Math.max(70, Math.min(300, glucose)).toFixed(1));
+          }
+        }
+
+        // Preserve name if it was present in prev but missing/empty in updates
+        if (prev.name && !updatedUser.name) {
+          updatedUser.name = prev.name;
+        }
+
+
         // Sync to storage
         AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser)).catch(e =>
           console.error('Error syncing user to storage:', e)
         );
         return updatedUser;
       });
+
+      // 2. Persist to backend
+      const authFields = ['name', 'email'];
+      const healthFields = [
+        'age', 'sex', 'height', 'weight', 'bmi', 'highBP', 'highChol', 
+        'genHlth', 'smoker', 'physActivity', 'heartDiseaseOrAttack', 
+        'hba1cEstimated', 'bloodGlucoseEstimated', 'medicalHistory'
+      ];
+
+      const authUpdates: any = {};
+      const healthUpdates: any = {};
+
+      Object.entries(updates).forEach(([key, value]) => {
+        if (authFields.includes(key)) authUpdates[key] = value;
+        if (healthFields.includes(key)) healthUpdates[key] = value;
+      });
+
+      const persistToBackend = async (retryLimit = 1) => {
+        try {
+          let token = await ensureAccessToken();
+          if (!token) return;
+
+          let authSuccess = true;
+          let healthSuccess = true;
+
+          // Update Profile (Name/Email)
+          if (Object.keys(authUpdates).length > 0) {
+            const authRes = await fetch(`${AUTH_URL}/profile`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify(authUpdates)
+            });
+            if (authRes.status === 401) authSuccess = false;
+          }
+
+          // Update Health Data
+          if (Object.keys(healthUpdates).length > 0) {
+            const healthRes = await fetch(`${HEALTH_URL}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify(healthUpdates)
+            });
+            if (healthRes.status === 401) healthSuccess = false;
+          }
+
+          // If either failed with 401, retry once
+          if ((!authSuccess || !healthSuccess) && retryLimit > 0) {
+            if (__DEV__) console.warn('👤 [UserContext] updateUser 401 - refreshing token and retrying...');
+            token = await ensureAccessToken(true); // Force refresh
+            if (token) {
+              await persistToBackend(retryLimit - 1);
+            }
+          }
+        } catch (e) {
+          console.error('Error persisting updates to backend:', e);
+        }
+      };
+
+      await persistToBackend();
     } catch (error) {
-      console.error('Error updating user:', error);
+      console.error('Error updating user state:', error);
     }
-  }, []);
+  }, [ensureAccessToken]);
+
 
   const addRewardPoints = useCallback(async (points: number) => {
     setRewardsPoints(prev => {
@@ -634,20 +803,28 @@ export const [UserProvider, useUser] = createContextHook(() => {
       return updated;
     });
 
-    try {
-      const token = await ensureAccessToken();
-      if (!token) return;
-      await fetch(`${API_BASE_URL}/notifications/water`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ water: glasses })
-      });
-    } catch (error) {
-      console.error('Error updating water intake:', error);
-    }
+    const updateWaterRef = async (retryLimit = 1) => {
+      try {
+        let token = await ensureAccessToken();
+        if (!token) return;
+        const res = await fetch(`${API_BASE_URL}/notifications/water`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ water: glasses })
+        });
+
+        if (res.status === 401 && retryLimit > 0) {
+          token = await ensureAccessToken(true);
+          if (token) return updateWaterRef(retryLimit - 1);
+        }
+      } catch (error) {
+        console.error('Error updating water intake:', error);
+      }
+    };
+    await updateWaterRef();
   }, [ensureAccessToken]);
 
   const registerPushNotifications = useCallback(async () => {
@@ -673,29 +850,38 @@ export const [UserProvider, useUser] = createContextHook(() => {
       );
       const expoToken = tokenResult.data;
 
-      const authToken = await ensureAccessToken();
-      if (!authToken) {
-        return { success: false, message: 'Not authenticated' };
-      }
+      const register = async (retryLimit = 1): Promise<{ success: boolean; token?: string; message?: string }> => {
+        let authToken = await ensureAccessToken();
+        if (!authToken) {
+          return { success: false, message: 'Not authenticated' };
+        }
 
-      const res = await fetch(`${API_BASE_URL}/notifications/push-token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify({
-          token: expoToken,
-          platform: Platform.OS,
-        }),
-      });
+        const res = await fetch(`${API_BASE_URL}/notifications/push-token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            token: expoToken,
+            platform: Platform.OS,
+          }),
+        });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        return { success: false, message: data.message || 'Failed to register push token' };
-      }
+        if (res.status === 401 && retryLimit > 0) {
+          authToken = await ensureAccessToken(true);
+          if (authToken) return register(retryLimit - 1);
+        }
 
-      return { success: true, token: expoToken };
+        const data = await res.json();
+        if (!res.status.toString().startsWith('2') || !data.success) {
+          return { success: false, message: data.message || 'Failed to register push token' };
+        }
+
+        return { success: true, token: expoToken };
+      };
+
+      return await register();
     } catch (error) {
       console.error('Push registration error:', error);
       return { success: false, message: 'Push registration failed' };
@@ -703,40 +889,47 @@ export const [UserProvider, useUser] = createContextHook(() => {
   }, [ensureAccessToken]);
 
   const connectGoogleFit = useCallback(async () => {
-    try {
-      const token = await ensureAccessToken();
-      if (!token) {
-        return { success: false, message: 'Please log in again.' };
-      }
-
-      const res = await fetch(`${GOOGLE_FIT_URL}/connect`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+    const connect = async (retryLimit = 1): Promise<{ success: boolean; message: string }> => {
+      try {
+        let token = await ensureAccessToken();
+        if (!token) {
+          return { success: false, message: 'Please log in again.' };
         }
-      });
 
-      const data = await res.json();
+        const res = await fetch(`${GOOGLE_FIT_URL}/connect`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
 
-      if (res.ok && data.success && data.authorizationUrl) {
-        await Linking.openURL(data.authorizationUrl);
-        return { success: true };
+        if (res.status === 401 && retryLimit > 0) {
+          token = await ensureAccessToken(true);
+          if (token) return connect(retryLimit - 1);
+        }
+
+        const data = await res.json();
+        if (res.ok && data.success && data.authorizationUrl) {
+          await Linking.openURL(data.authorizationUrl);
+          return { success: true, message: 'Opening Google Fit connection...' };
+        }
+
+        // Check for specific error codes
+        if (data.errorCode === 'INVALID_SIGNATURE') {
+          console.warn('Token signature invalid - clearing tokens');
+          await clearLocalState();
+          return { success: false, message: 'Session invalid. Please login again.' };
+        }
+
+        return { success: false, message: data.message || 'Connection failed' };
+      } catch (error) {
+        console.error('Google Fit connection error:', error);
+        return { success: false, message: 'Could not connect to Google Fit' };
       }
+    };
 
-      // Check if it's a signature error
-      if (data.errorCode === 'INVALID_SIGNATURE') {
-        console.warn('Token signature invalid - clearing tokens');
-        await clearLocalState();
-        return { success: false, message: 'Session invalid. Please login again.' };
-      }
-
-      console.error('Google Fit connection failed:', data.message);
-      return { success: false, message: data.message || 'Not authorized or token failed' };
-    } catch (error) {
-      console.error('Error connecting Google Fit:', error);
-      return { success: false, message: 'Unable to connect Google Fit' };
-    }
+    return await connect();
   }, [ensureAccessToken, clearLocalState]);
 
   const disconnectGoogleFit = useCallback(async () => {
