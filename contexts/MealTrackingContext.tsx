@@ -1,6 +1,6 @@
-import createContextHook from '@nkzw/create-context-hook';
+import { createContextHook } from '@/hooks/use-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Platform } from 'react-native';
 import { useUser } from './UserContext';
 
@@ -80,96 +80,169 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedDietPlan, setSelectedDietPlan] = useState<string>('balanced');
   const { user, ensureAccessToken, isLoading: isAuthLoading } = useUser();
+  const lastUserRef = useRef<any>(null);
 
-  const getUserStorageKey = (userId: string) => `${BASE_STORAGE_KEY}_${userId}`;
+  const lastLoadedUserId = useRef<string | null>(null);
+  const isFetching = useRef<boolean>(false);
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mealLogsCount = useRef<number>(0);
+
+  const getUserStorageKey = useCallback((userId: string) => `${BASE_STORAGE_KEY}_${userId}`, []);
+
+  const saveMealLogs = useCallback(async (logs: MealLog[], userId: string) => {
+    try {
+      await AsyncStorage.setItem(getUserStorageKey(userId), JSON.stringify(logs));
+    } catch (error) {
+      console.error('Error saving meal logs:', error);
+    }
+  }, [getUserStorageKey]);
+
+  const loadMealLogs = useCallback(async (userId: string, isRetry = false) => {
+    // If we're already fetching for this user and it's not a retry, skip
+    if (isFetching.current && !isRetry) {
+      if (__DEV__) console.log('[MealTracking] Already fetching, skipping load for user:', userId);
+      return;
+    }
+
+    // If we just loaded this user and it's not a retry, skip
+    if (lastLoadedUserId.current === userId && !isRetry) {
+      if (__DEV__) console.log('[MealTracking] Meal logs already loaded for user:', userId);
+      setIsLoading(false);
+      return;
+    }
+
+    // Lock both synchronously to prevent race conditions during subsequent renders/effects
+    isFetching.current = true;
+    lastLoadedUserId.current = userId;
+
+    try {
+      setIsLoading(true);
+      if (__DEV__) console.log(`[MealTracking] ${isRetry ? 'Retrying' : 'Loading'} logs for user ${userId}...`);
+
+      const storageKey = getUserStorageKey(userId);
+      const stored = await AsyncStorage.getItem(storageKey);
+
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            const fixed = parsed.map((log: any) => ({
+              ...log,
+              imageUri: fixupImageUrl(log.imageUri)
+            }));
+            setMealLogs(fixed);
+            mealLogsCount.current = fixed.length;
+          }
+        } catch (e) {
+          console.error('[MealTracking] Failed to parse stored logs:', e);
+        }
+      } else if (!isRetry) {
+        setMealLogs([]);
+        mealLogsCount.current = 0;
+      }
+
+      // Fetch latest from backend if token exists
+      let token = await ensureAccessToken?.(isRetry);
+      if (token) {
+        if (__DEV__) console.log(`[MealTracking] Fetching from backend: ${API_BASE_URL}/meals`);
+        let res = await fetch(`${API_BASE_URL}/meals`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        // Handle 401 retry linearly
+        if (res.status === 401 && !isRetry) {
+          console.warn('[MealTracking] 401 Unauthorized - retrying with fresh token');
+          token = await ensureAccessToken?.(true);
+          if (!token) { // If refresh fails, return early
+            console.error('[MealTracking] Failed to refresh token, cannot fetch meals.');
+            setIsLoading(false); // Ensure loading state is reset
+            return; // Stop execution of loadMealLogs
+          }
+          // If token is successfully refreshed, retry the fetch
+          res = await fetch(`${API_BASE_URL}/meals`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.mealLogs) {
+            if (__DEV__) console.log(`[MealTracking] Received ${data.mealLogs.length} logs from backend`);
+
+            const normalized = data.mealLogs.map((log: any) => ({
+              id: log._id,
+              backendId: log._id,
+              date: log.loggedAt || log.createdAt,
+              imageUri: fixupImageUrl(log.imageUrl),
+              foodItems: log.foodItems || [],
+              nutritionalInfo: log.nutritionalInfo,
+              servingSize: log.servingSize,
+              mealType: log.mealType,
+              notes: log.notes,
+            }));
+
+            setMealLogs(prev => {
+              const backendIds = new Set<string>(normalized.map((m: any) => m.id));
+              const localOnly = prev.filter((m: MealLog) => !m.backendId || !backendIds.has(m.backendId));
+              const merged = [...normalized, ...localOnly].sort((a, b) =>
+                new Date(b.date).getTime() - new Date(a.date).getTime()
+              );
+
+              // Update count and storage. Ref is sync, storage is async fire-and-forget here.
+              mealLogsCount.current = merged.length;
+              saveMealLogs(merged, userId).catch(e => console.error('[MealTracking] Save failed:', e));
+
+              return merged;
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[MealTracking] Failed to load logs:', error);
+      // On failure, reset the lock so it can be retried on next user-driven event
+      lastLoadedUserId.current = null;
+    } finally {
+      setIsLoading(false);
+      isFetching.current = false;
+    }
+  }, [ensureAccessToken, getUserStorageKey, saveMealLogs]);
+
+  const loadMealLogsRef = useRef(loadMealLogs);
+  useEffect(() => {
+    if (loadMealLogsRef.current !== loadMealLogs) {
+      if (__DEV__) console.log('[MealTracking] loadMealLogs identity changed');
+      loadMealLogsRef.current = loadMealLogs;
+    }
+  }, [loadMealLogs]);
 
   useEffect(() => {
     // Wait for UserContext to finish loading initial state
     if (isAuthLoading) return;
 
     if (user?.id) {
-      loadMealLogs(user.id);
+      if (__DEV__ && lastUserRef.current !== user) {
+        console.log('[MealTracking] User object identity changed. ID:', user.id);
+        lastUserRef.current = user;
+      }
+      
+      const userId = user.id;
+      if (__DEV__) console.log('[MealTracking] Effect trigger for user:', userId);
+      
+      // Debounce the load
+      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+      fetchTimeoutRef.current = setTimeout(() => {
+        loadMealLogs(userId);
+      }, 150);
     } else {
-      // Only clear if we are definitely not logged in
+      lastLoadedUserId.current = null;
       setMealLogs([]);
-    }
-  }, [user?.id, isLoading]);
-
-  const saveMealLogs = async (logs: MealLog[], userId: string) => {
-    try {
-      await AsyncStorage.setItem(getUserStorageKey(userId), JSON.stringify(logs));
-    } catch (error) {
-      console.error('Error saving meal logs:', error);
-    }
-  };
-
-  const loadMealLogs = async (userId: string, isRetry = false) => {
-    try {
-      setIsLoading(true);
-      const storageKey = getUserStorageKey(userId);
-      const stored = await AsyncStorage.getItem(storageKey);
-
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Ensure image URIs are fixed up even for cached data
-        const fixed = parsed.map((log: any) => ({
-          ...log,
-          imageUri: fixupImageUrl(log.imageUri)
-        }));
-        setMealLogs(fixed);
-      } else if (!isRetry) {
-        // Only reset if first load and no storage found
-        setMealLogs([]);
-      }
-
-      // Fetch latest from backend if token exists
-      const token = await ensureAccessToken?.(isRetry);
-      if (token) {
-        console.log(`[MealTracking] Fetching logs for user ${userId} from backend...`);
-        const res = await fetch(`${API_BASE_URL}/meals`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (res.status === 401 && !isRetry) {
-          console.warn('[MealTracking] 401 Unauthorized on load - retrying with fresh token');
-          return loadMealLogs(userId, true);
-        }
-
-        const data = await res.json();
-
-        if (res.ok && data.success && data.mealLogs) {
-          console.log(`[MealTracking] Received ${data.mealLogs.length} logs from backend`);
-
-          const normalized = data.mealLogs.map((log: any) => ({
-            id: log._id,
-            backendId: log._id,
-            date: log.loggedAt || log.createdAt,
-            imageUri: fixupImageUrl(log.imageUrl),
-            foodItems: log.foodItems || [],
-            nutritionalInfo: log.nutritionalInfo,
-            servingSize: log.servingSize,
-            mealType: log.mealType,
-            notes: log.notes,
-          }));
-
-          setMealLogs(prev => {
-            const backendIds = new Set<string>(normalized.map((m: any) => m.id));
-            const localOnly = prev.filter((m: MealLog) => !m.backendId || !backendIds.has(m.backendId));
-            const merged = [...normalized, ...localOnly].sort((a, b) =>
-              new Date(b.date).getTime() - new Date(a.date).getTime()
-            );
-
-            saveMealLogs(merged, userId);
-            return merged;
-          });
-        }
-      }
-    } catch (error) {
-      console.error('[MealTracking] Failed to load logs:', error);
-    } finally {
       setIsLoading(false);
     }
-  };
+
+    return () => {
+      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+    };
+  }, [user?.id, isAuthLoading, loadMealLogs]);
 
   const addMealLog = useCallback(async (meal: Omit<MealLog, 'id' | 'date'> & { imageFileUri?: string }, isRetry = false): Promise<MealLog> => {
     const token = await ensureAccessToken?.(isRetry);
@@ -238,6 +311,7 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
 
     setMealLogs(prev => {
       const updated = [newMeal, ...prev];
+      mealLogsCount.current = updated.length;
       if (user?.id) saveMealLogs(updated, user.id);
       return updated;
     });
@@ -248,6 +322,7 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   const deleteMealLog = useCallback(async (mealId: string, backendId?: string) => {
     setMealLogs(prev => {
       const updated = prev.filter(meal => meal.id !== mealId && meal.backendId !== backendId);
+      mealLogsCount.current = updated.length;
       if (user?.id) saveMealLogs(updated, user.id);
       return updated;
     });
@@ -393,6 +468,7 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   const clearAllMealLogs = useCallback(async () => {
     try {
       await AsyncStorage.removeItem(BASE_STORAGE_KEY);
+      mealLogsCount.current = 0;
       setMealLogs([]);
     } catch (error) {
       console.error('Error clearing meal logs:', error);
@@ -436,8 +512,8 @@ type MealTrackingContextType = {
   isLoading: boolean;
   selectedDietPlan: string;
   setSelectedDietPlan: (plan: string) => void;
-  addMealLog: (meal: Omit<MealLog, 'id' | 'date'>) => Promise<MealLog>;
-  deleteMealLog: (mealId: string) => Promise<void>;
+  addMealLog: (meal: Omit<MealLog, 'id' | 'date'> & { imageFileUri?: string }) => Promise<MealLog>;
+  deleteMealLog: (mealId: string, backendId?: string) => Promise<void>;
   updateMealLog: (mealId: string, updates: Partial<MealLog>) => Promise<void>;
   getTodayMeals: MealLog[];
   getWeekMeals: MealLog[];
