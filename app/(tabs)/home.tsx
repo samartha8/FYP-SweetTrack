@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ColorValue, Platform } from 'react-native';
 import { useState, useCallback, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ColorValue, Platform, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Heart, Brain, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCrossed, Camera, BarChart3, List, Link, ChevronRight } from 'lucide-react-native';
@@ -18,7 +18,7 @@ let globalLastFetch = 0;
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, healthMetrics, dailyGoals, rewardsPoints, streak, isGoogleFitConnected, connectGoogleFit, ensureAccessToken } = useUser();
+  const { user, healthMetrics, dailyGoals, rewardsPoints, streak, isGoogleFitConnected, connectGoogleFit, ensureAccessToken, syncGoogleFitData } = useUser();
   const { colors, scale } = useTheme(); // Global Theme Hook
   const { t } = useTranslation();
   const [predictionData, setPredictionData] = useState({ 
@@ -28,6 +28,7 @@ export default function HomeScreen() {
     inputData: null as any,
     insights: [] as string[]
   });
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Dynamic Styles
   const themed = useMemo(() => ({
@@ -122,8 +123,13 @@ export default function HomeScreen() {
       // Throttling: Only fetch if 60s have passed since last successful fetch
       // EXCEPT: If the analysis is outdated (isUnchanged is false), we always want to try to fetch the latest
       if (isFetchingRef.current || (now - globalLastFetch < 60000 && isUnchanged)) {
+        // Still trigger health sync even if prediction is throttled
+        syncGoogleFitData();
         return;
       }
+      
+      // Always sync health data when screen is focused
+      syncGoogleFitData();
 
       const fetchPredictionPrev = async (retryLimit = 1) => {
         try {
@@ -177,8 +183,18 @@ export default function HomeScreen() {
       };
 
       fetchPredictionPrev();
-    }, [user?.id, user?.email, ensureAccessToken])
+    }, [user?.id, user?.email, ensureAccessToken, syncGoogleFitData])
   );
+
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await Promise.all([
+      syncGoogleFitData(),
+      // Reset throttle to allow prediction refresh if needed
+      (() => { globalLastFetch = 0; return Promise.resolve(); })()
+    ]);
+    setIsRefreshing(false);
+  }, [syncGoogleFitData]);
 
   const { riskScore, riskLevel } = predictionData;
   const riskColor = riskLevel === 'High Risk' ? colors.risk.high : riskLevel === 'Medium Risk' ? colors.risk.moderate : colors.risk.low;
@@ -187,7 +203,7 @@ export default function HomeScreen() {
     { icon: Activity, label: t.wellness.steps, value: healthMetrics.steps, goal: dailyGoals.steps, unit: '', color: colors.chart.bmi },
     { icon: Droplet, label: t.wellness.water, value: healthMetrics.water, goal: dailyGoals.water, unit: t.wellness.unitWater, color: colors.secondary },
     { icon: Moon, label: t.wellness.sleep, value: healthMetrics.sleep, goal: dailyGoals.sleep, unit: t.wellness.unitSleep, color: colors.chart.glucose },
-    { icon: Flame, label: t.wellness.calories, value: healthMetrics.calories, goal: dailyGoals.calories, unit: t.wellness.unitCalories, color: colors.warning },
+    { icon: Flame, label: t.wellness.calories, value: healthMetrics.caloriesConsumed || 0, goal: dailyGoals.calories, unit: t.wellness.unitCalories, color: colors.warning },
   ];
 
   const features = [
@@ -205,6 +221,14 @@ export default function HomeScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       >
         <View style={[styles.header, themed.header]}>
           <View>

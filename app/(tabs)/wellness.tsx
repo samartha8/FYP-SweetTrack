@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, ColorValue } from 'react-native';
+import { useState, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, ColorValue, RefreshControl } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Activity, Droplet, Moon, Flame, X, TrendingUp, Link } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +18,22 @@ export default function WellnessScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState<MetricType | null>(null);
   const [inputValue, setInputValue] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const { syncGoogleFitData } = useUser();
+
+  // Refresh health metrics when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      syncGoogleFitData();
+    }, [syncGoogleFitData])
+  );
+
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await syncGoogleFitData();
+    setIsRefreshing(false);
+  }, [syncGoogleFitData]);
 
   // Dynamic Styles
   const themed = useMemo(() => ({
@@ -77,7 +94,8 @@ export default function WellnessScreen() {
       type: 'calories' as MetricType,
       icon: Flame,
       label: t.wellness.calories,
-      value: healthMetrics.calories,
+      value: healthMetrics.calories, // Burned
+      consumed: healthMetrics.caloriesConsumed || 0,
       goal: dailyGoals.calories,
       unit: t.wellness.unitCalories,
       color: colors.warning,
@@ -120,6 +138,14 @@ export default function WellnessScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       >
         {!isGoogleFitConnected ? (
           <TouchableOpacity
@@ -173,16 +199,45 @@ export default function WellnessScreen() {
                     </View>
 
                     <Text style={[styles.metricLabel, themed.metricLabel]}>{metric.label}</Text>
-                    <View style={styles.metricValueContainer}>
-                      <Text style={[styles.metricValue, themed.metricValue]}>{metric.value}</Text>
-                      <Text style={[styles.metricUnit, themed.metricUnit]}> / {metric.goal} {metric.unit}</Text>
-                    </View>
+                    
+                    {metric.type === 'calories' ? (
+                      <View style={styles.calorieContainer}>
+                        <View style={styles.calorieRow}>
+                          <View style={styles.calorieItem}>
+                            <Text style={[styles.calorieValue, { color: colors.textWhite }]}>{metric.consumed}</Text>
+                            <Text style={[styles.calorieLabel, { color: colors.textWhite }]}>{t.wellness.caloriesEaten}</Text>
+                          </View>
+                          <View style={styles.calorieDivider} />
+                          <View style={styles.calorieItem}>
+                            <Text style={[styles.calorieValue, { color: colors.textWhite }]}>{metric.value}</Text>
+                            <Text style={[styles.calorieLabel, { color: colors.textWhite }]}>{t.wellness.caloriesBurned}</Text>
+                          </View>
+                          <View style={styles.calorieDivider} />
+                          <View style={styles.calorieItem}>
+                            <Text style={[styles.calorieValue, { color: colors.textWhite }]}>
+                              {(metric.consumed || 0) - metric.value}
+                            </Text>
+                            <Text style={[styles.calorieLabel, { color: colors.textWhite }]}>Net</Text>
+                          </View>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.metricValueContainer}>
+                        <Text style={[styles.metricValue, themed.metricValue]}>{metric.value}</Text>
+                        <Text style={[styles.metricUnit, themed.metricUnit]}> / {metric.goal} {metric.unit}</Text>
+                      </View>
+                    )}
 
                     <View style={styles.progressBarContainer}>
                       <View style={styles.progressBarBackground}>
-                        <View style={[styles.progressBarFill, { width: `${progress}%`, backgroundColor: colors.textWhite }]} />
+                        <View style={[styles.progressBarFill, { 
+                          width: `${metric.type === 'calories' ? Math.min(((metric.consumed || 0) / metric.goal) * 100, 100) : progress}%`, 
+                          backgroundColor: colors.textWhite 
+                        }]} />
                       </View>
-                      <Text style={[styles.progressText, themed.progressText]}>{Math.round(progress)}%</Text>
+                      <Text style={[styles.progressText, themed.progressText]}>
+                        {Math.round(metric.type === 'calories' ? ((metric.consumed || 0) / metric.goal) * 100 : progress)}%
+                      </Text>
                     </View>
 
                     <View style={styles.quickActions}>
@@ -531,5 +586,35 @@ const styles = StyleSheet.create({
   },
   modalButtonText: {
     fontWeight: '700',
+  },
+  calorieContainer: {
+    marginVertical: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 16,
+    padding: 12,
+  },
+  calorieRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  calorieItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  calorieValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  calorieLabel: {
+    fontSize: 10,
+    opacity: 0.9,
+    marginTop: 2,
+    textTransform: 'uppercase',
+  },
+  calorieDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
 });
