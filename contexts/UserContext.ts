@@ -1,9 +1,9 @@
 import { createContextHook } from '../hooks/use-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
 import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import * as ExpoLinking from 'expo-linking';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, Platform } from 'react-native';
 import {
   AUTH_URL,
@@ -40,6 +40,7 @@ export type HealthMetrics = {
   water: number;
   sleep: number;
   calories: number;
+  caloriesConsumed?: number;
   heartRateAvg?: number | null;
   bloodGlucose?: number | null;
   bloodPressure?: { systolic: number; diastolic: number } | null;
@@ -74,6 +75,7 @@ const DEFAULT_HEALTH_METRICS: HealthMetrics = {
   water: 0,
   sleep: 0,
   calories: 0,
+  caloriesConsumed: 0,
 };
 
 const DEFAULT_DAILY_GOALS: DailyGoals = {
@@ -111,6 +113,10 @@ export const [UserProvider, useUser] = createContextHook(() => {
   
   // Track user ID in a ref to avoid dependency loops in callbacks
   const userIdRef = useMemo(() => ({ current: null as string | null }), []);
+  
+  // Track processed URLs to prevent infinite loops on Web (handles Linking.getInitialURL() behavior)
+  const processedUrlsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     userIdRef.current = user?.id || null;
   }, [user?.id]);
@@ -399,17 +405,21 @@ export const [UserProvider, useUser] = createContextHook(() => {
     try {
       await clearLocalState(); // Clear any existing session
 
-      // Step 1: Construct Google OAuth URL
-      const googleAuthUrl = `${AUTH_URL}/google`;
+      // Step 1: Construct return URL dynamically so it works in Expo Go (exp://) or Production (diabetesapp://)
+      const returnUrl = ExpoLinking.createURL('auth/callback');
+
+      // Step 2: Pass returnUrl to the backend via query parameter
+      const googleAuthUrl = `${AUTH_URL}/google?returnUrl=${encodeURIComponent(returnUrl)}`;
 
       if (__DEV__) {
         console.log('🔐 Opening Google Sign-In:', googleAuthUrl);
+        console.log('🔙 Expecting return URL:', returnUrl);
       }
 
-      // Step 2: Open OAuth flow in system browser
+      // Step 3: Open OAuth flow in system browser
       const result = await WebBrowser.openAuthSessionAsync(
         googleAuthUrl,
-        'diabetesapp://auth/callback'
+        returnUrl
       );
 
       if (result.type === 'cancel') {
@@ -424,8 +434,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
         return { success: false, message: 'Google Sign-In failed. Please try again.' };
       }
 
-      // Step 3: Extract tokens from callback URL
-      // Format: diabetesapp://auth/callback?token=xxx&refreshToken=yyy&needsHealthSetup=true
+      // Step 4: Extract tokens from the dynamic callback URL returned by WebBrowser
       const url = result.url;
       if (__DEV__) {
         console.log('📱 Received callback from Google OAuth');
@@ -833,6 +842,9 @@ export const [UserProvider, useUser] = createContextHook(() => {
     }
 
     try {
+      // Dynamically import Notifications to prevent Expo Go SDK 53+ terminal spam on boot
+      const Notifications = await import('expo-notifications');
+      
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
       if (existingStatus !== 'granted') {
@@ -983,6 +995,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
         await updateHealthMetrics({
           steps: data.data.steps || 0,
           calories: data.data.calories || 0,
+          caloriesConsumed: data.data.caloriesConsumed || 0,
           sleep: data.data.sleep || 0,
           heartRateAvg: data.data.heartRateAvg || null,
           bloodGlucose: data.data.bloodGlucose || null,
@@ -1009,14 +1022,20 @@ export const [UserProvider, useUser] = createContextHook(() => {
   // Handle OAuth callbacks and Google Fit deep links
   useEffect(() => {
     const handleDeepLink = async (url: string) => {
+      if (!url) return;
+      
+      // Prevent processing the same internal redirect multiple times (fixes loops on Web)
+      if (processedUrlsRef.current.has(url)) return;
+      processedUrlsRef.current.add(url);
+
       if (__DEV__) {
         console.log('🔗 Deep link received:', url);
       }
 
       // Handle auth callbacks (Google Sign-In)
-      if (url.includes('diabetesapp://auth/')) {
+      if (url.includes('auth/')) {
         // Handle errors
-        if (url.includes('diabetesapp://auth/error')) {
+        if (url.includes('auth/error')) {
           const queryStart = url.indexOf('?');
           if (queryStart !== -1) {
             const params = new URLSearchParams(url.substring(queryStart + 1));
@@ -1027,7 +1046,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
         }
 
         // Handle successful callback
-        if (url.includes('diabetesapp://auth/callback')) {
+        if (url.includes('auth/callback')) {
           try {
             const queryStart = url.indexOf('?');
             if (queryStart === -1) {
@@ -1075,6 +1094,11 @@ export const [UserProvider, useUser] = createContextHook(() => {
             if (__DEV__) {
               console.log('✅ Deep link auth successful:', userData.user.email);
             }
+
+            // On Web, clear the tokens from the browser URL to keep it clean and prevent re-parsing
+            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
           } catch (error) {
             console.error('❌ Deep link handling error:', error);
           }
@@ -1082,8 +1106,8 @@ export const [UserProvider, useUser] = createContextHook(() => {
         return; // Exit after handling auth callback
       }
 
-      // Handle Google Fit callbacks
-      if (url.includes('google-fit-connected')) {
+      // Handle Google Fit callbacks (nested within auth/ callback prefix)
+      if (url.includes('google-fit')) {
         try {
           const urlParts = url.split('?');
           const queryString = urlParts[1] || '';
@@ -1092,23 +1116,28 @@ export const [UserProvider, useUser] = createContextHook(() => {
           const error = params.get('error');
 
           if (success === 'true') {
-            // Connection successful - update status and sync data
+            if (__DEV__) console.log('✅ Google Fit connection confirmed via deep link');
+            
+            // 1. Update states
             setIsGoogleFitConnected(true);
-            await AsyncStorage.setItem(STORAGE_KEYS.GOOGLE_FIT_CONNECTED, JSON.stringify(true));
-
             if (user) {
               setUser({ ...user, isGoogleFitConnected: true });
             }
 
-            // Sync data immediately after connection
+            // 2. Persist to storage
+            await AsyncStorage.setItem(STORAGE_KEYS.GOOGLE_FIT_CONNECTED, JSON.stringify(true));
+
+            // 3. Sync data immediately
             await syncGoogleFitData();
+            
+            if (__DEV__) console.log('🔄 Triggered initial Google Fit sync after connection');
           } else if (success === 'false') {
-            // Connection failed
             const errorMessage = error ? decodeURIComponent(error) : 'Google Fit connection failed';
-            console.error('Google Fit connection error:', errorMessage);
+            console.error('❌ Google Fit connection error:', errorMessage);
+            Alert.alert('Connection Failed', errorMessage);
           }
         } catch (err) {
-          console.error('Error handling Google Fit deep link:', err);
+          console.error('❌ Error handling Google Fit deep link:', err);
         }
       }
     };
