@@ -79,7 +79,7 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedDietPlan, setSelectedDietPlan] = useState<string>('balanced');
-  const { user, ensureAccessToken, isLoading: isAuthLoading } = useUser();
+  const { user, ensureAccessToken, isLoading: isAuthLoading, syncGoogleFitData } = useUser();
   const lastUserRef = useRef<any>(null);
 
   const lastLoadedUserId = useRef<string | null>(null);
@@ -313,6 +313,10 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
       const updated = [newMeal, ...prev];
       mealLogsCount.current = updated.length;
       if (user?.id) saveMealLogs(updated, user.id);
+      
+      // Trigger health metrics sync to update global 'caloriesConsumed'
+      syncGoogleFitData().catch(e => console.error('[MealTracking] Post-add sync failed:', e));
+      
       return updated;
     });
 
@@ -334,6 +338,9 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` }
         });
+        
+        // Trigger health metrics sync to update global 'caloriesConsumed'
+        syncGoogleFitData().catch(e => console.error('[MealTracking] Post-delete sync failed:', e));
       } catch (error) {
         console.error('Backend delete meal log failed:', error);
       }
