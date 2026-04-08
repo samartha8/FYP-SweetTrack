@@ -22,7 +22,7 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const fetchLatestRecord = async (retryLimit = 1) => {
+      const fetchLatestRecord = async (retryLimit = 1): Promise<void> => {
         try {
           let token = await ensureAccessToken();
           const response = await fetch(`${DIABETES_URL}/latest`, {

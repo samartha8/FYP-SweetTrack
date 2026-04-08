@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '@/contexts/UserContext';
 import { useTheme } from '@/contexts/SettingsContext';
 import { useTranslation } from '@/hooks/use-translation';
+import { useMealTracking } from '@/contexts/MealTrackingContext';
 
 type MetricType = 'steps' | 'water' | 'sleep' | 'calories';
 
@@ -15,6 +16,7 @@ export default function WellnessScreen() {
   const { healthMetrics, dailyGoals, updateHealthMetrics, isGoogleFitConnected, connectGoogleFit } = useUser();
   const { colors, scale } = useTheme();
   const { t } = useTranslation();
+  const { todayNutrition } = useMealTracking();
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState<MetricType | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -95,7 +97,7 @@ export default function WellnessScreen() {
       icon: Flame,
       label: t.wellness.calories,
       value: healthMetrics.calories, // Burned
-      consumed: healthMetrics.caloriesConsumed || 0,
+      consumed: todayNutrition.calories || 0,
       goal: dailyGoals.calories,
       unit: t.wellness.unitCalories,
       color: colors.warning,
@@ -154,7 +156,7 @@ export default function WellnessScreen() {
             onPress={connectGoogleFit}
           >
             <LinearGradient
-              colors={colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+              colors={colors.gradient.primary as any}
               style={styles.googleFitGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -181,7 +183,7 @@ export default function WellnessScreen() {
               return (
                 <View key={index} style={[styles.metricCard, themed.card]}>
                   <LinearGradient
-                    colors={metric.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                    colors={metric.color ? [metric.color, metric.color + '40'] as any : colors.gradient.primary as any}
                     style={styles.metricGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
@@ -354,7 +356,7 @@ export default function WellnessScreen() {
 
             <TouchableOpacity style={styles.modalButton} onPress={handleSave}>
               <LinearGradient
-                colors={colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                colors={colors.gradient.primary as any}
                 style={styles.modalButtonGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}

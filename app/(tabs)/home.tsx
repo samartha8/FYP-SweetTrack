@@ -6,6 +6,7 @@ import { Heart, Brain, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCross
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from '@/hooks/use-translation';
 import { useUser } from '@/contexts/UserContext';
+import { useMealTracking } from '@/contexts/MealTrackingContext';
 import { DIABETES_URL } from '../../constants/Api';
 import { useTheme } from '@/contexts/SettingsContext';
 
@@ -18,7 +19,8 @@ let globalLastFetch = 0;
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, healthMetrics, dailyGoals, rewardsPoints, streak, isGoogleFitConnected, connectGoogleFit, ensureAccessToken, syncGoogleFitData } = useUser();
+  const { user, healthMetrics, dailyGoals, rewardsPoints, streak, unlockedBadges = [], isGoogleFitConnected, connectGoogleFit, ensureAccessToken, syncGoogleFitData } = useUser();
+  const { todayNutrition } = useMealTracking();
   const { colors, scale } = useTheme(); // Global Theme Hook
   const { t } = useTranslation();
   const [predictionData, setPredictionData] = useState({ 
@@ -48,13 +50,16 @@ export default function HomeScreen() {
     card: { backgroundColor: colors.card, shadowColor: colors.cardShadow },
     riskBadgeText: { fontSize: scale(12) },
     riskScore: { fontSize: scale(48) },
-    riskLabel: { fontSize: scale(16) },
-    riskDescription: { fontSize: scale(14) },
+    riskLabel: { color: colors.textWhite, fontSize: scale(18) },
+    riskDescription: { color: colors.textWhite, fontSize: scale(14) },
+    sectionLink: { fontSize: scale(14) },
+    riskHeader: { marginBottom: scale(12) },
+    rewardItem: { alignItems: 'center' as const },
+    rewardDivider: { width: 1, height: scale(40), marginHorizontal: scale(5) },
     googleFitTitle: { fontSize: scale(20) },
     googleFitDescription: { fontSize: scale(14) },
     statGoal: { fontSize: scale(12), color: colors.textSecondary },
-    sectionLink: { fontSize: scale(14) },
-  }), [colors, scale]);
+  }), [colors, scale, width]);
 
   const getHealthVal = useCallback((userObj: any, key: string, fallbackKey?: string) => {
     if (!userObj) return undefined;
@@ -97,7 +102,6 @@ export default function HomeScreen() {
 
     const prevData = predictionData.inputData || {} as any;
     
-    // Aligned with prediction.tsx
     return (
       isSame(currentHealth.bmi, prevData.bmi) &&
       isSame(currentHealth.age, prevData.age) &&
@@ -114,24 +118,19 @@ export default function HomeScreen() {
     );
   }, [predictionData.inputData, currentHealth]);
 
-  /* lastFetchRef and isFetchingRef moved/removed */
   const isFetchingRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
       const now = Date.now();
-      // Throttling: Only fetch if 60s have passed since last successful fetch
-      // EXCEPT: If the analysis is outdated (isUnchanged is false), we always want to try to fetch the latest
       if (isFetchingRef.current || (now - globalLastFetch < 60000 && isUnchanged)) {
-        // Still trigger health sync even if prediction is throttled
         syncGoogleFitData();
         return;
       }
       
-      // Always sync health data when screen is focused
       syncGoogleFitData();
 
-      const fetchPredictionPrev = async (retryLimit = 1) => {
+      const fetchPredictionPrev = async (retryLimit = 1): Promise<void> => {
         try {
           if (!user) return;
           isFetchingRef.current = true;
@@ -144,7 +143,6 @@ export default function HomeScreen() {
 
           if (__DEV__) console.log(`🏠 [Home] Fetching latest prediction preview (Attempt: ${2 - retryLimit})...`);
           
-          // Only update globalLastFetch on first attempt or success
           if (retryLimit === 1) globalLastFetch = now;
 
           const response = await fetch(`${DIABETES_URL}/latest?t=${now}`, {
@@ -153,7 +151,7 @@ export default function HomeScreen() {
 
           if (response.status === 401 && retryLimit > 0) {
             if (__DEV__) console.warn("🏠 [Home] 401 Unauthorized - forcing token refresh and retrying...");
-            token = await ensureAccessToken(true); // Force refresh
+            token = await ensureAccessToken(true);
             if (token) {
               return fetchPredictionPrev(retryLimit - 1);
             }
@@ -190,7 +188,6 @@ export default function HomeScreen() {
     setIsRefreshing(true);
     await Promise.all([
       syncGoogleFitData(),
-      // Reset throttle to allow prediction refresh if needed
       (() => { globalLastFetch = 0; return Promise.resolve(); })()
     ]);
     setIsRefreshing(false);
@@ -203,7 +200,7 @@ export default function HomeScreen() {
     { icon: Activity, label: t.wellness.steps, value: healthMetrics.steps, goal: dailyGoals.steps, unit: '', color: colors.chart.bmi },
     { icon: Droplet, label: t.wellness.water, value: healthMetrics.water, goal: dailyGoals.water, unit: t.wellness.unitWater, color: colors.secondary },
     { icon: Moon, label: t.wellness.sleep, value: healthMetrics.sleep, goal: dailyGoals.sleep, unit: t.wellness.unitSleep, color: colors.chart.glucose },
-    { icon: Flame, label: t.wellness.calories, value: healthMetrics.caloriesConsumed || 0, goal: dailyGoals.calories, unit: t.wellness.unitCalories, color: colors.warning },
+    { icon: Flame, label: t.wellness.calories, value: todayNutrition.calories || 0, goal: dailyGoals.calories, unit: t.wellness.unitCalories, color: colors.warning },
   ];
 
   const features = [
@@ -212,8 +209,6 @@ export default function HomeScreen() {
     { icon: BarChart3, label: t.home.progress, route: '/progress', gradient: colors.gradient.secondary },
     { icon: List, label: t.home.viewAllMeals, route: '/view-all-meals', gradient: colors.gradient.error },
   ];
-
-  console.log('Home Component User State:', user ? { id: user.id || (user as any)._id, name: user.name } : 'Null');
 
   return (
     <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
@@ -245,7 +240,7 @@ export default function HomeScreen() {
           onPress={() => router.push('/prediction' as any)}
         >
           <LinearGradient
-            colors={[riskColor, riskColor + '90'] as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+            colors={[riskColor, riskColor + '90'] as any}
             style={styles.riskGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -292,20 +287,36 @@ export default function HomeScreen() {
                 const Icon = stat.icon;
 
                 return (
-                  <View key={index} style={[styles.statCard, themed.card]}>
-                    <View style={[styles.statIconContainer, { backgroundColor: stat.color + '20' }]}>
-                      <Icon size={24} color={stat.color} strokeWidth={2} />
+                  <TouchableOpacity 
+                    key={index} 
+                    activeOpacity={0.8}
+                    style={[styles.statCard, themed.card, { borderColor: stat.color + '15', borderWidth: 1 }]}
+                  >
+                    <View style={styles.statHeader}>
+                      <View style={[styles.statIconContainer, { backgroundColor: stat.color + '15' }]}>
+                        <Icon size={22} color={stat.color} strokeWidth={2.5} />
+                      </View>
+                      <View style={[styles.progressBadge, { backgroundColor: stat.color + '10' }]}>
+                        <Text style={[styles.progressBadgeText, { color: stat.color }]}>
+                          {Math.round(progress)}%
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={[styles.statValue, themed.statValue]}>
-                      {stat.value}
-                      {stat.unit && <Text style={[styles.statUnit, themed.statUnit]}> {stat.unit}</Text>}
-                    </Text>
-                    <Text style={[styles.statLabel, themed.statLabel]}>{stat.label}</Text>
-                    <View style={[styles.progressBar, { backgroundColor: colors.backgroundTertiary }]}>
-                      <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: stat.color }]} />
+                    <View style={styles.statBody}>
+                      <Text style={[styles.statValue, themed.statValue]}>
+                        {stat.value}
+                        {stat.unit && <Text style={[styles.statUnit, themed.statUnit]}> {stat.unit}</Text>}
+                      </Text>
+                      <Text style={[styles.statLabel, themed.statLabel]}>{stat.label}</Text>
                     </View>
-                    <Text style={[styles.statGoal, themed.statGoal]}>{t.common.goal}: {stat.goal}</Text>
-                  </View>
+
+                    <View style={styles.statFooter}>
+                      <View style={[styles.progressBar, { backgroundColor: colors.backgroundTertiary }]}>
+                        <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: stat.color }]} />
+                      </View>
+                      <Text style={[styles.statGoal, themed.statGoal]}>{t.common.goal}: {stat.goal}</Text>
+                    </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -320,7 +331,7 @@ export default function HomeScreen() {
               onPress={connectGoogleFit}
             >
               <LinearGradient
-                colors={colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                colors={colors.gradient.primary as any}
                 style={styles.googleFitGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -354,7 +365,7 @@ export default function HomeScreen() {
                   onPress={() => router.push(feature.route as any)}
                 >
                   <LinearGradient
-                    colors={feature.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                    colors={feature.gradient as any}
                     style={[styles.featureGradient, { shadowColor: feature.gradient[0] }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
@@ -383,14 +394,14 @@ export default function HomeScreen() {
                 <Text style={[styles.rewardValue, themed.rewardValue, { color: colors.primary }]}>{rewardsPoints}</Text>
                 <Text style={[styles.rewardLabel, themed.rewardLabel]}>{t.home.points}</Text>
               </View>
-              <View style={[styles.rewardDivider, { backgroundColor: colors.border }]} />
+              <View style={[themed.rewardDivider, { backgroundColor: colors.border }]} />
               <View style={styles.rewardItem}>
                 <Text style={[styles.rewardValue, themed.rewardValue, { color: colors.primary }]}>{streak}</Text>
                 <Text style={[styles.rewardLabel, themed.rewardLabel]}>{t.home.streak}</Text>
               </View>
-              <View style={[styles.rewardDivider, { backgroundColor: colors.border }]} />
+              <View style={[themed.rewardDivider, { backgroundColor: colors.border }]} />
               <View style={styles.rewardItem}>
-                <Text style={[styles.rewardValue, themed.rewardValue, { color: colors.primary }]}>3</Text>
+                <Text style={[styles.rewardValue, themed.rewardValue, { color: colors.primary }]}>{unlockedBadges.length}</Text>
                 <Text style={[styles.rewardLabel, themed.rewardLabel]}>{t.home.badges}</Text>
               </View>
             </View>
@@ -552,41 +563,71 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -6,
+    gap: 12,
+    justifyContent: 'space-between',
   },
   statCard: {
     width: CARD_WIDTH,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
-    margin: 6,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 2,
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    minHeight: 165,
+  },
+  statHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   statIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+  },
+  progressBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  progressBadgeText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  statBody: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    marginTop: 4,
   },
   statValue: {
-    fontWeight: '700' as const,
-    marginBottom: 4,
+    fontWeight: '800' as const,
+    fontSize: 28,
   },
   statUnit: {
-    fontWeight: '400' as const,
+    fontWeight: '600' as const,
+    fontSize: 14,
+    opacity: 0.6,
   },
   statLabel: {
-    marginBottom: 12,
+    fontSize: 14,
+    fontWeight: '600' as const,
+    opacity: 0.7,
+    marginTop: 2,
+  },
+  statFooter: {
+    marginTop: 12,
   },
   progressBar: {
     height: 6,
     borderRadius: 3,
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   progressFill: {
     height: '100%',
@@ -594,7 +635,8 @@ const styles = StyleSheet.create({
   },
   statGoal: {
     fontSize: 12,
-    color: '#95A5A6',
+    fontWeight: '600' as const,
+    opacity: 0.5,
   },
   featuresGrid: {
     flexDirection: 'row',

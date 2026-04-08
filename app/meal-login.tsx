@@ -314,6 +314,7 @@ export default function MealLogScreen() {
 
     setIsSaving(true);
     try {
+      // With Optimistic UI, this returns immediately after saving to local state
       await addMealLog({
         imageUri: analysisImageUrl || nutritionalData?.imageUrl || selectedImage || undefined,
         foodItems: nutritionalData.foodItems,
@@ -322,17 +323,15 @@ export default function MealLogScreen() {
         mealType: selectedMealType,
       });
 
+      // ⚡ Instantly show success and navigate back
       setShowSuccess(true);
-      // Automatically go back after a short delay to let user see success
       setTimeout(() => {
         safeBack();
-      }, 2500);
-
+      }, 500); // Super fast 0.5s transition
     } catch (error) {
       console.error('Error saving meal log:', error);
       Alert.alert('Error', 'Failed to save meal log. Please try again.');
-    } finally {
-      setIsSaving(false);
+      setIsSaving(false); // Only reset if there's an error, otherwise we navigate away
     }
   };
 

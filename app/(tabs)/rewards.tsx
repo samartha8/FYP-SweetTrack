@@ -20,7 +20,7 @@ type Badge = {
 
 export default function RewardsScreen() {
   const insets = useSafeAreaInsets();
-  const { rewardsPoints, streak } = useUser();
+  const { rewardsPoints, streak, unlockedBadges = [] } = useUser();
   const { colors, scale } = useTheme();
   const { t } = useTranslation();
 
@@ -57,7 +57,7 @@ export default function RewardsScreen() {
       color: colors.warning,
       gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
       unlockedGradient: colors.gradient.warning,
-      unlocked: true,
+      unlocked: Array.isArray(unlockedBadges) ? unlockedBadges.includes('1') : false,
     },
     {
       id: '2',
@@ -67,7 +67,7 @@ export default function RewardsScreen() {
       color: colors.secondary,
       gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
       unlockedGradient: colors.gradient.secondary,
-      unlocked: true,
+      unlocked: Array.isArray(unlockedBadges) ? unlockedBadges.includes('2') : false,
     },
     {
       id: '3',
@@ -77,7 +77,7 @@ export default function RewardsScreen() {
       color: colors.primary,
       gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
       unlockedGradient: colors.gradient.success,
-      unlocked: true,
+      unlocked: Array.isArray(unlockedBadges) ? unlockedBadges.includes('3') : false,
     },
     {
       id: '4',
@@ -87,7 +87,7 @@ export default function RewardsScreen() {
       color: colors.chart?.bmi || '#FFD60A',
       gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
       unlockedGradient: [colors.chart?.bmi || '#FFD60A', (colors.chart?.bmi || '#FFD60A') + '80'],
-      unlocked: false,
+      unlocked: Array.isArray(unlockedBadges) ? unlockedBadges.includes('4') : false,
     },
     {
       id: '5',
@@ -97,7 +97,7 @@ export default function RewardsScreen() {
       color: colors.chart?.glucose || '#30D158',
       gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
       unlockedGradient: [colors.chart?.glucose || '#30D158', (colors.chart?.glucose || '#30D158') + '80'],
-      unlocked: false,
+      unlocked: Array.isArray(unlockedBadges) ? unlockedBadges.includes('5') : false,
     },
     {
       id: '6',
@@ -107,9 +107,9 @@ export default function RewardsScreen() {
       color: colors.error,
       gradient: [colors.backgroundTertiary, colors.backgroundTertiary],
       unlockedGradient: colors.gradient.error,
-      unlocked: false,
+      unlocked: Array.isArray(unlockedBadges) ? unlockedBadges.includes('6') : false,
     },
-  ], [colors, t]);
+  ], [colors, t, unlockedBadges]);
 
   const coupons = useMemo(() => [
     { id: '1', title: t.rewards.coupon1, points: 500, available: rewardsPoints >= 500 },
@@ -132,7 +132,7 @@ export default function RewardsScreen() {
       >
         <View style={[styles.statsCard, themed.card]}>
           <LinearGradient
-            colors={colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+            colors={colors.gradient.primary as any}
             style={styles.statsGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -174,7 +174,7 @@ export default function RewardsScreen() {
                   ]}
                 >
                   <LinearGradient
-                    colors={badge.unlocked ? badge.unlockedGradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]] : badge.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                    colors={badge.unlocked ? (colors.gradient.success as any) : (['#E0E0E0', '#BDBDBD'] as any)}
                     style={styles.badgeIconContainer}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}

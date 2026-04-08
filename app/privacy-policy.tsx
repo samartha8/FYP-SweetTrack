@@ -29,7 +29,7 @@ export default function PrivacyPolicyScreen() {
       >
         <View style={styles.logoSection}>
           <LinearGradient
-            colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+            colors={Colors.gradient.primary as any}
             style={styles.logoContainer}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}

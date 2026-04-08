@@ -501,7 +501,7 @@ export const translations = {
         tabs: {
             home: 'Home',
             wellness: 'Wellness',
-            chatbot: 'Ask Chori',
+            chatbot: 'Ask AI',
             rewards: 'Rewards',
             profile: 'Profile',
         },
@@ -1006,7 +1006,7 @@ export const translations = {
         tabs: {
             home: 'गृहपृष्ठ',
             wellness: 'स्वास्थ्य',
-            chatbot: 'Ask Chori',
+            chatbot: 'Ask AI',
             rewards: 'पुरस्कार',
             profile: 'प्रोफाइल',
         },

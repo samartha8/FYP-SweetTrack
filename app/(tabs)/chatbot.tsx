@@ -54,7 +54,7 @@ const getApiBaseUrl = () => {
   }
 
   // Fallback for physical devices
-  const appJsonIP = Constants.expoConfig?.extra?.apiHost || '192.168.1.76';
+  const appJsonIP = Constants.expoConfig?.extra?.apiHost || '192.168.1.136';
   console.log('📱 Physical Device Fallback - Using:', appJsonIP);
   return `http://${appJsonIP}:5000/api`;
 };

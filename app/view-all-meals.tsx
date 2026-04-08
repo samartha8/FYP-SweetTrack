@@ -148,7 +148,7 @@ export default function ViewAllDashboardScreen() {
               style={styles.heroCard}
             >
               <LinearGradient
-                colors={['#FF9500', '#FF5E00'] as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+                colors={['#FF9500', '#FF5E00'] as any}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.heroGradient}

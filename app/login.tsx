@@ -72,6 +72,7 @@ export default function LoginScreen() {
     }
   };
 
+  console.log('Rendering LoginScreen');
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -141,7 +142,7 @@ export default function LoginScreen() {
             disabled={isLoading}
           >
             <LinearGradient
-              colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
+              colors={Colors.gradient.primary as any}
               style={styles.loginButtonGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}

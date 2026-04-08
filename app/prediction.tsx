@@ -153,7 +153,7 @@ export default function PredictionScreen() {
         }
     }, [user?.id, user?.email, ensureAccessToken]);
 
-    const runPrediction = async (retryLimit = 1) => {
+    const runPrediction = async (retryLimit = 1): Promise<void> => {
         if (retryLimit === 1) setAnalyzing(true);
         try {
             if (!user || !currentHealth) return;
@@ -301,7 +301,7 @@ export default function PredictionScreen() {
 
                 {/* Main Score Card */}
                 <LinearGradient
-                    colors={[riskColor, riskColor + '90']}
+                    colors={[riskColor, riskColor + '90'] as any}
                     style={styles.scoreCard}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}

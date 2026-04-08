@@ -1,7 +1,9 @@
 import { Tabs } from "expo-router";
 import { Home, Activity, MessageCircle, Award, User } from "lucide-react-native";
 import React, { type ReactElement } from "react";
-import Colors from "@/constants/colors";
+import { Platform, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from "@/contexts/SettingsContext";
 import { HapticTab } from "@/components/haptic-tab";
 import { useTranslation } from "@/hooks/use-translation";
 
@@ -14,21 +16,39 @@ type TabBarIconProps = {
 
 export default function TabLayout(): ReactElement {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const { colors, scale } = useTheme();
+
+  // Calculate dynamic tab bar height based on safe area insets
+  // On Android with edge-to-edge enabled, we need to account for the bottom navigation bar
+  const tabHeight = Platform.OS === 'android' 
+    ? (insets.bottom > 0 ? 70 + insets.bottom : 70) 
+    : (insets.bottom > 0 ? 88 : 64);
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textSecondary,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
-          backgroundColor: Colors.card,
-          borderTopColor: Colors.border,
+          backgroundColor: colors.card,
+          borderTopColor: colors.border,
           borderTopWidth: 1,
+          height: tabHeight,
+          paddingTop: 10,
+          paddingBottom: Platform.OS === 'android' ? Math.max(insets.bottom, 12) : insets.bottom,
+          elevation: 8,
+          shadowColor: colors.cardShadow,
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: scale(11),
           fontWeight: '600',
+          marginTop: 2,
         },
         tabBarButton: (props) => <HapticTab {...props} />,
       }}

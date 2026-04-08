@@ -108,13 +108,22 @@ export default function HealthSetupScreen() {
 
       // Calculate BMI if height or weight change
       if (field === 'height' || field === 'weight') {
-        const h = parseFloat(field === 'height' ? value : next.height || '0');
-        const w = parseFloat(field === 'weight' ? value : next.weight || '0');
+        const heightStr = field === 'height' ? value : next.height || '0';
+        const weightStr = field === 'weight' ? value : next.weight || '0';
+        
+        // Robust decimal parsing (replaces any non-numeric chars except dot)
+        const h = parseFloat(heightStr.replace(/[^0-9.]/g, ''));
+        const w = parseFloat(weightStr.replace(/[^0-9.]/g, ''));
 
-        if (!Number.isNaN(h) && !Number.isNaN(w) && h > 0 && w > 0) {
+        if (!Number.isNaN(h) && !Number.isNaN(w) && h > 80 && w > 25 && w < 400) {
           const hMeters = h / 100;
           const bmiVal = Number((w / (hMeters * hMeters)).toFixed(1));
-          next.bmi = bmiVal.toString();
+          // Only set BMI if it's within a reasonable human range (12-98)
+          if (bmiVal >= 12 && bmiVal <= 98) {
+            next.bmi = bmiVal.toString();
+          } else {
+            next.bmi = '';
+          }
         } else {
           next.bmi = '';
         }
@@ -128,7 +137,7 @@ export default function HealthSetupScreen() {
         const highChol = parseFloat(next.highChol || '0');
         const highBP = parseFloat(next.highBP || '0');
 
-        if (bmi > 0 && age > 0 && genHlth > 0) {
+        if (bmi >= 12 && age > 0 && genHlth > 0) {
           const hba1c = 4.5 + (bmi - 25) * 0.03 + (age - 7) * 0.15 + genHlth * 0.4 + highChol * 0.8 + highBP * 0.6;
           const clampedHba1c = Math.max(3.5, Math.min(15.0, hba1c));
           next.hba1cEstimated = clampedHba1c.toFixed(2);
@@ -143,7 +152,7 @@ export default function HealthSetupScreen() {
         const highChol = parseFloat(next.highChol || '0');
         const highBP = parseFloat(next.highBP || '0');
 
-        if (bmi > 0 && age > 0 && genHlth > 0) {
+        if (bmi >= 12 && age > 0 && genHlth > 0) {
           const glucose = 85 + (bmi - 25) * 1.2 + (age - 7) * 3.0 + genHlth * 8 + highChol * 15 + highBP * 12;
           const clampedGlucose = Math.max(70, Math.min(300, glucose));
           next.bloodGlucoseEstimated = clampedGlucose.toFixed(1);

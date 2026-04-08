@@ -47,31 +47,15 @@ export type DailyNutrition = {
 
 const BASE_STORAGE_KEY = '@sweettrack_meal_logs';
 
-const normalizeApiUrl = (url: string) => {
-  const trimmed = url.replace(/\/$/, '');
-  return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
-};
+import { MEAL_URL } from '@/constants/Api';
 
-const getApiBaseUrl = () => {
-  const envBase = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL;
-  if (envBase) return normalizeApiUrl(envBase);
-
-  if (Platform.OS === 'web') return 'http://localhost:5000/api';
-
-  const hostOverride = process.env.EXPO_PUBLIC_API_HOST || process.env.API_HOST;
-  const port = process.env.EXPO_PUBLIC_API_PORT || process.env.API_PORT || '5000';
-  const defaultIP = '10.0.2.2';
-  const hostIP = hostOverride || (__DEV__ ? defaultIP : '192.168.0.111');
-  return `http://${hostIP}:${port}/api`;
-};
-
-const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL = MEAL_URL;
 
 export const fixupImageUrl = (url?: string) => {
   if (!url || !url.startsWith('http')) return url;
+  // Use the host from the centralized MEAL_URL if possible, otherwise use local-first fallback
   const apiHost = API_BASE_URL.split('/')[2];
   // Replace anything between http:// and the first /uploads or similar path with current apiHost
-  // This handles localhost, 127.0.0.1, or stale IP addresses
   return url.replace(/https?:\/\/([^\/]+)/, `http://${apiHost}`);
 };
 
@@ -245,83 +229,109 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   }, [user?.id, isAuthLoading, loadMealLogs]);
 
   const addMealLog = useCallback(async (meal: Omit<MealLog, 'id' | 'date'> & { imageFileUri?: string }, isRetry = false): Promise<MealLog> => {
-    const token = await ensureAccessToken?.(isRetry);
-    const isServerUrl = meal.imageUri?.startsWith('http') && !meal.imageUri?.includes('file://');
-
-    const form = new FormData();
-    form.append('mealType', meal.mealType);
-    form.append('foodItems', JSON.stringify(meal.foodItems || []));
-    form.append('nutritionalInfo', JSON.stringify(meal.nutritionalInfo));
-    if (meal.servingSize) form.append('servingSize', meal.servingSize);
-    if (meal.notes) form.append('notes', meal.notes);
-    form.append('loggedAt', new Date().toISOString());
-
-    if (meal.imageUri && !isServerUrl) {
-      const uriParts = meal.imageUri.split('.');
-      const ext = uriParts[uriParts.length - 1];
-      form.append('image', {
-        uri: meal.imageUri,
-        name: `meal.${ext || 'jpg'}`,
-        type: `image/${ext || 'jpeg'}`,
-      } as any);
-    } else if (meal.imageUri && isServerUrl) {
-      form.append('imageUrl', meal.imageUri);
-    }
-
-    console.log('[MealTracking] Adding meal log, imageUri:', meal.imageUri, 'isServerUrl:', isServerUrl);
-    let backendLog: any = null;
-    if (token) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/meals`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-          },
-          body: form as any,
-        });
-
-        if (res.status === 401 && !isRetry) {
-          console.warn('[MealTracking] 401 Unauthorized on add - retrying');
-          return addMealLog(meal, true);
-        }
-
-        const data = await res.json();
-        console.log('[MealTracking] Backend response:', data?.success ? 'SUCCESS' : 'FAILED', data?.message);
-        if (res.ok && data.success) {
-          backendLog = data.mealLog;
-          console.log('[MealTracking] Backend imageUrl:', backendLog?.imageUrl);
-        } else {
-          console.error('Backend meal log failed:', data?.message);
-        }
-      } catch (error) {
-        console.error('Meal upload failed:', error);
-      }
-    }
-
+    // 1. Create the temporary local meal object
+    const tempId = `temp-${Date.now()}`;
     const newMeal: MealLog = {
       ...meal,
-      id: backendLog?._id || Date.now().toString(),
-      backendId: backendLog?._id,
-      date: backendLog?.loggedAt || new Date().toISOString(),
-      // Apply fixupImageUrl to the backend URI if present
-      imageUri: backendLog?.imageUrl ? fixupImageUrl(backendLog.imageUrl) : meal.imageUri,
+      id: tempId,
+      date: new Date().toISOString(),
     };
-    console.log('[MealTracking] Final newMeal imageUri:', newMeal.imageUri);
 
+    // 2. IMMEDIATELY update local state (Optimistic)
     setMealLogs(prev => {
       const updated = [newMeal, ...prev];
       mealLogsCount.current = updated.length;
       if (user?.id) saveMealLogs(updated, user.id);
       
-      // Trigger health metrics sync to update global 'caloriesConsumed'
-      syncGoogleFitData().catch(e => console.error('[MealTracking] Post-add sync failed:', e));
+      // Post-add sync
+      syncGoogleFitData().catch(e => console.log('[MealTracking] Post-add sync failed:', e));
       
       return updated;
     });
 
+    // 3. Perform background server sync
+    (async () => {
+      const token = await ensureAccessToken?.(isRetry);
+      const isServerUrl = meal.imageUri?.startsWith('http') && !meal.imageUri?.includes('file://');
+
+      if (!token) return;
+
+      try {
+        const headers: any = {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        };
+
+        let body;
+        if (isServerUrl) {
+          headers['Content-Type'] = 'application/json';
+          body = JSON.stringify({
+            mealType: meal.mealType,
+            foodItems: meal.foodItems || [],
+            nutritionalInfo: meal.nutritionalInfo,
+            servingSize: meal.servingSize,
+            notes: meal.notes,
+            loggedAt: newMeal.date,
+            imageUrl: meal.imageUri
+          });
+        } else {
+          const form = new FormData();
+          form.append('mealType', meal.mealType);
+          form.append('foodItems', JSON.stringify(meal.foodItems || []));
+          form.append('nutritionalInfo', JSON.stringify(meal.nutritionalInfo));
+          if (meal.servingSize) form.append('servingSize', meal.servingSize);
+          if (meal.notes) form.append('notes', meal.notes);
+          form.append('loggedAt', newMeal.date);
+
+          if (meal.imageUri) {
+            const uriParts = meal.imageUri.split('.');
+            const ext = uriParts[uriParts.length - 1];
+            form.append('image', {
+              uri: meal.imageUri,
+              name: `meal.${ext || 'jpg'}`,
+              type: `image/${ext || 'jpeg'}`,
+            } as any);
+          }
+          body = form as any;
+        }
+
+        const res = await fetch(`${API_BASE_URL}/meals`, {
+          method: 'POST',
+          headers,
+          body,
+        });
+
+        if (res.status === 401 && !isRetry) {
+          return addMealLog(meal, true);
+        }
+
+        const data = await res.json();
+        if (res.ok && data.success && data.mealLog) {
+          const backendLog = data.mealLog;
+          
+          // 4. Update the local entry with official backend data
+          setMealLogs(prev => {
+            const updated = prev.map(m => 
+              m.id === tempId ? {
+                ...m,
+                id: backendLog._id,
+                backendId: backendLog._id,
+                imageUri: fixupImageUrl(backendLog.imageUrl) || m.imageUri,
+                date: backendLog.loggedAt || m.date
+              } : m
+            );
+            if (user?.id) saveMealLogs(updated, user.id);
+            return updated;
+          });
+          console.log('[MealTracking] Background sync successful for:', tempId);
+        }
+      } catch (error) {
+        console.error('[MealTracking] Background sync failed:', error);
+      }
+    })();
+
     return newMeal;
-  }, [ensureAccessToken, user?.id]);
+  }, [ensureAccessToken, user?.id, saveMealLogs, syncGoogleFitData]);
 
   const deleteMealLog = useCallback(async (mealId: string, backendId?: string) => {
     setMealLogs(prev => {
@@ -358,14 +368,9 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   }, []);
 
   const getTodayMeals = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
+    const todayStr = new Date().toDateString();
     return mealLogs.filter(meal => {
-      const mealDate = new Date(meal.date);
-      return mealDate >= today && mealDate < tomorrow;
+      return new Date(meal.date).toDateString() === todayStr;
     });
   }, [mealLogs]);
 
@@ -381,13 +386,13 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
 
   const todayNutrition = useMemo(() => {
     const totals = getTodayMeals.reduce((acc, meal) => ({
-      calories: acc.calories + meal.nutritionalInfo.calories,
-      protein: acc.protein + meal.nutritionalInfo.protein,
-      carbs: acc.carbs + meal.nutritionalInfo.carbs,
-      fat: acc.fat + meal.nutritionalInfo.fat,
-      sugar: acc.sugar + (meal.nutritionalInfo.sugar || 0),
-      fiber: acc.fiber + (meal.nutritionalInfo.fiber || 0),
-      sodium: acc.sodium + (meal.nutritionalInfo.sodium || 0),
+      calories: acc.calories + (Number(meal.nutritionalInfo.calories) || 0),
+      protein: acc.protein + (Number(meal.nutritionalInfo.protein) || 0),
+      carbs: acc.carbs + (Number(meal.nutritionalInfo.carbs) || 0),
+      fat: acc.fat + (Number(meal.nutritionalInfo.fat) || 0),
+      sugar: acc.sugar + (Number(meal.nutritionalInfo.sugar) || 0),
+      fiber: acc.fiber + (Number(meal.nutritionalInfo.fiber) || 0),
+      sodium: acc.sodium + (Number(meal.nutritionalInfo.sodium) || 0),
     }), {
       calories: 0,
       protein: 0,

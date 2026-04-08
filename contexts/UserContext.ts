@@ -33,6 +33,9 @@ export type User = {
   healthSetupCompleted?: boolean;
   isGoogleFitConnected?: boolean;
   medicalHistory?: string[];
+  rewardsPoints?: number;
+  streak?: number;
+  unlockedBadges?: string[];
 };
 
 export type HealthMetrics = {
@@ -106,6 +109,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
   const [dailyGoals, setDailyGoals] = useState<DailyGoals>(DEFAULT_DAILY_GOALS);
   const [rewardsPoints, setRewardsPoints] = useState<number>(0);
   const [streak, setStreak] = useState<number>(0);
+  const [unlockedBadges, setUnlockedBadges] = useState<string[]>([]);
   const [isGoogleFitConnected, setIsGoogleFitConnected] = useState<boolean>(false);
   
   // Single-flight refresh coordination
@@ -146,6 +150,9 @@ export const [UserProvider, useUser] = createContextHook(() => {
     setUser(userToSave);
     setHasHealthSetup(userToSave.healthSetupCompleted || false);
     setIsGoogleFitConnected(userToSave.isGoogleFitConnected || false);
+    setRewardsPoints(userToSave.rewardsPoints || 0);
+    setStreak(userToSave.streak || 0);
+    setUnlockedBadges(userToSave.unlockedBadges || []);
     // Mark onboarding as completed for authenticated users (they've seen the login screen)
     setHasOnboarded(true);
 
@@ -206,6 +213,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
+        console.log(`[X-Ray] Refreshing session via: ${AUTH_URL}/refresh`);
         const res = await fetch(`${AUTH_URL}/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -213,7 +221,14 @@ export const [UserProvider, useUser] = createContextHook(() => {
           signal: controller.signal
         });
         clearTimeout(timeoutId);
-        const data = await res.json();
+        const rawText = await res.text();
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {
+          console.error(`❌ [X-Ray] JSON Parse Failed. Response from server was: "${rawText}"`);
+          return { success: false, message: 'Server returned invalid response', errorCode: 'SERVER_ERROR' };
+        }
 
         if (!res.ok || !data.success) {
           if (res.status === 401 || res.status === 403 || data.errorCode === 'INVALID_REFRESH_TOKEN' || data.errorCode === 'INVALID_SIGNATURE' || data.errorCode === 'VERSION_MISMATCH') {
@@ -574,9 +589,11 @@ export const [UserProvider, useUser] = createContextHook(() => {
     const currentToken = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
 
     // If no token or forced refresh or expired
-    if (!currentToken || forceRefresh || isTokenExpired(currentToken)) {
-      if (__DEV__ && !currentToken) console.log('🔐 No token found, refreshing session...');
-      if (__DEV__ && currentToken && !forceRefresh) console.log('⏰ Token expired, refreshing session...');
+    const expired = currentToken ? isTokenExpired(currentToken) : true;
+    if (!currentToken || forceRefresh || expired) {
+      if (__DEV__) {
+        console.log(`🔐 [Auth] Token Refresh Check: ${!currentToken ? 'No Token' : forceRefresh ? 'Forced' : 'Expired'}`);
+      }
       
       const refreshed = await refreshSession();
       if (refreshed.success) {
@@ -640,10 +657,18 @@ export const [UserProvider, useUser] = createContextHook(() => {
         if (updates.height !== undefined || updates.weight !== undefined) {
           const h = parseFloat(updatedUser.height?.toString() || '0');
           const w = parseFloat(updatedUser.weight?.toString() || '0');
-          if (h > 0 && w > 0) {
+          if (h > 80 && w > 25 && w < 400) {
             const hMeters = h / 100;
-            updatedUser.bmi = Number((w / (hMeters * hMeters)).toFixed(1));
+            const bmiCalculated = Number((w / (hMeters * hMeters)).toFixed(1));
+            // Only update if it's a valid human BMI range
+            if (bmiCalculated >= 12 && bmiCalculated <= 98) {
+              updatedUser.bmi = bmiCalculated;
+            }
           }
+        }
+
+        if (__DEV__) {
+          console.log('👤 [UserContext] updateUser (Local):', updates);
         }
 
         // 1.2 Auto-calculate HbA1c and Glucose if relevant fields change
@@ -751,21 +776,65 @@ export const [UserProvider, useUser] = createContextHook(() => {
   }, [ensureAccessToken]);
 
 
-  const addRewardPoints = useCallback(async (points: number) => {
-    setRewardsPoints(prev => {
-      const newPoints = prev + points;
-      AsyncStorage.setItem(STORAGE_KEYS.REWARDS_POINTS, JSON.stringify(newPoints));
-      return newPoints;
-    });
-  }, []);
+  const syncRewards = useCallback(async (retryLimit = 1) => {
+    let token = await ensureAccessToken();
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/rewards/sync`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.status === 401 && retryLimit > 0) {
+        token = await ensureAccessToken(true);
+        if (token) return syncRewards(retryLimit - 1);
+      }
 
-  const incrementStreak = useCallback(async () => {
-    setStreak(prev => {
-      const newStreak = prev + 1;
-      AsyncStorage.setItem(STORAGE_KEYS.STREAK, JSON.stringify(newStreak));
-      return newStreak;
-    });
-  }, []);
+      const data = await response.json();
+      if (data.success) {
+        setRewardsPoints(data.rewardsPoints);
+        setStreak(data.streak);
+        setUnlockedBadges(data.unlockedBadges);
+      }
+    } catch (e) {
+      console.error('Failed to sync rewards:', e);
+    }
+  }, [ensureAccessToken]);
+
+  const addRewardPoints = useCallback(async (actionType: 'DAILY_LOGIN' | 'LOG_MEAL' | 'HEALTH_PREDICTION' | 'HIT_GOAL', retryLimit = 1) => {
+    let token = await ensureAccessToken();
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/rewards/award`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ actionType })
+      });
+      
+      if (response.status === 401 && retryLimit > 0) {
+        token = await ensureAccessToken(true);
+        if (token) return addRewardPoints(actionType, retryLimit - 1);
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        setRewardsPoints(data.rewardsPoints);
+        setUnlockedBadges(data.unlockedBadges);
+        
+        // Return information if they unlocked a new badge or gained points
+        return {
+          pointsGained: data.message.match(/\d+/) ? parseInt(data.message.match(/\d+/)[0]) : 0,
+          newBadges: data.newBadges || []
+        };
+      }
+    } catch(e) {
+      console.error('Failed to award points:', e);
+    }
+    return null;
+  }, [ensureAccessToken]);
 
   const checkGoalsCompletion = useCallback((metrics: HealthMetrics, goals: DailyGoals) => {
     const goalsCompleted =
@@ -774,10 +843,9 @@ export const [UserProvider, useUser] = createContextHook(() => {
       metrics.sleep >= goals.sleep;
 
     if (goalsCompleted) {
-      addRewardPoints(50);
-      incrementStreak();
+      addRewardPoints('HIT_GOAL');
     }
-  }, [addRewardPoints, incrementStreak]);
+  }, [addRewardPoints]);
 
   const updateHealthMetrics = useCallback(async (updates: Partial<HealthMetrics>) => {
     setHealthMetrics(prev => {
@@ -812,7 +880,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
       return updated;
     });
 
-    const updateWaterRef = async (retryLimit = 1) => {
+    const updateWaterRef = async (retryLimit = 1): Promise<void> => {
       try {
         let token = await ensureAccessToken();
         if (!token) return;
@@ -971,9 +1039,17 @@ export const [UserProvider, useUser] = createContextHook(() => {
     } catch (error) {
       console.error('Error disconnecting Google Fit:', error);
     }
-  }, [ensureAccessToken, user]);
+  }, [ensureAccessToken, user, isGoogleFitConnected]);
 
   const syncGoogleFitData = useCallback(async () => {
+    // 🛡️ Skip silently if the user hasn't connected Google Fit yet
+    if (!isGoogleFitConnected) {
+      if (__DEV__) {
+        console.log('ℹ️ [UserContext] Skipping Google Fit sync (Not connected)');
+      }
+      return { success: false, message: 'Google Fit not connected' };
+    }
+
     try {
       const token = await ensureAccessToken();
       if (!token) {
@@ -1017,7 +1093,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
       console.error('Error syncing Google Fit data:', error);
       return { success: false, message: 'Unable to sync Google Fit data' };
     }
-  }, [ensureAccessToken, updateHealthMetrics, clearLocalState]);
+  }, [ensureAccessToken, updateHealthMetrics, clearLocalState, isGoogleFitConnected]);
 
   // Handle OAuth callbacks and Google Fit deep links
   useEffect(() => {
@@ -1106,8 +1182,8 @@ export const [UserProvider, useUser] = createContextHook(() => {
         return; // Exit after handling auth callback
       }
 
-      // Handle Google Fit callbacks (nested within auth/ callback prefix)
-      if (url.includes('google-fit')) {
+      // Handle Google Fit callbacks (separate from auth prefix to prevent collision)
+      if (url.includes('google-fit/callback')) {
         try {
           const urlParts = url.split('?');
           const queryString = urlParts[1] || '';
@@ -1118,19 +1194,28 @@ export const [UserProvider, useUser] = createContextHook(() => {
           if (success === 'true') {
             if (__DEV__) console.log('✅ Google Fit connection confirmed via deep link');
             
-            // 1. Update states
+            // 🚀 STEP 1: INSTANT UI FEEDBACK
+            // Set local states immediately so UI components (like Home) update before network calls
             setIsGoogleFitConnected(true);
             if (user) {
-              setUser({ ...user, isGoogleFitConnected: true });
+              const updatedUser = { ...user, isGoogleFitConnected: true };
+              setUser(updatedUser);
+              // Optimistically update storage
+              await AsyncStorage.setItem(STORAGE_KEYS.GOOGLE_FIT_CONNECTED, JSON.stringify(true));
+              await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser));
             }
 
-            // 2. Persist to storage
-            await AsyncStorage.setItem(STORAGE_KEYS.GOOGLE_FIT_CONNECTED, JSON.stringify(true));
-
-            // 3. Sync data immediately
-            await syncGoogleFitData();
+            // 🚀 STEP 2: BACK-END SYNC
+            // Force a session refresh to get the latest tokens and confirm state with server
+            if (__DEV__) console.log('🔄 Syncing connection state with server...');
+            const refreshResult = await refreshSession();
             
-            if (__DEV__) console.log('🔄 Triggered initial Google Fit sync after connection');
+            // 🚀 STEP 3: INITIAL DATA PULL
+            // Sync actual health data (steps, etc) from Google Fit API
+            if (refreshResult.success) {
+              await syncGoogleFitData();
+              if (__DEV__) console.log('🏁 Initial Google Fit data sync completed');
+            }
           } else if (success === 'false') {
             const errorMessage = error ? decodeURIComponent(error) : 'Google Fit connection failed';
             console.error('❌ Google Fit connection error:', errorMessage);
@@ -1168,6 +1253,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
     dailyGoals,
     rewardsPoints,
     streak,
+    unlockedBadges,
     isGoogleFitConnected,
     setWater,
     registerPushNotifications,
@@ -1182,6 +1268,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
     updateHealthMetrics,
     updateDailyGoals,
     addRewardPoints,
+    syncRewards,
     resetDailyMetrics,
     connectGoogleFit,
     disconnectGoogleFit,
@@ -1196,6 +1283,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
     dailyGoals,
     rewardsPoints,
     streak,
+    unlockedBadges,
     isGoogleFitConnected,
     setWater,
     registerPushNotifications,
@@ -1210,6 +1298,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
     updateHealthMetrics,
     updateDailyGoals,
     addRewardPoints,
+    syncRewards,
     resetDailyMetrics,
     connectGoogleFit,
     disconnectGoogleFit,

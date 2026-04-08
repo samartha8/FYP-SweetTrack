@@ -2,16 +2,16 @@ import { Dimensions, Platform, PixelRatio } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Base dimensions (iPhone 14 Pro - 390x844)
-const BASE_WIDTH = 390;
-const BASE_HEIGHT = 844;
+// Base dimensions (Standard Android design: 360x760)
+const BASE_WIDTH = 360;
+const BASE_HEIGHT = 760;
 
 // Scale factor based on screen width
 const scale = SCREEN_WIDTH / BASE_WIDTH;
 const verticalScale = SCREEN_HEIGHT / BASE_HEIGHT;
 
 // Moderate scale for better control
-const moderateScale = (size: number, factor: number = 0.5) => {
+export const moderateScale = (size: number, factor: number = 0.5) => {
   return size + (scale - 1) * size * factor;
 };
 
@@ -86,7 +86,7 @@ export const getIconSize = (baseSize: number) => {
   return baseSize;
 };
 
-export { SCREEN_WIDTH, SCREEN_HEIGHT, scale, verticalScale, moderateScale };
+export { SCREEN_WIDTH, SCREEN_HEIGHT, scale, verticalScale };
 
 
 

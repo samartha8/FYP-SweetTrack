@@ -9,11 +9,6 @@ import Constants from 'expo-constants';
  * - Physical Devices: Uses the apiHost from app.json or a default IP
  */
 export const getApiBaseUrl = (): string => {
-    // Use environment variable if provided
-    if (process.env.EXPO_PUBLIC_API_URL) {
-        return `${process.env.EXPO_PUBLIC_API_URL}/api`;
-    }
-
     // 1. WEB: Always use localhost
     if (Platform.OS === 'web') {
         return 'http://localhost:5000/api';
@@ -37,7 +32,7 @@ export const getApiBaseUrl = (): string => {
         }
 
         // Default fallback IP (change this to your machine's local IP if needed)
-        return 'http://192.168.1.76:5000/api';
+        return 'http://192.168.1.136:5000/api';
     }
 
     // 3. iOS SIMULATOR: use localhost

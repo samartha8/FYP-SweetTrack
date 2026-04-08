@@ -52,7 +52,7 @@ const slides: OnboardingSlide[] = [
     description: 'Monitor your daily and weekly goals with visual progress bars, streaks, and achievement tracking.',
     icon: TrendingUp,
     gradient: Colors.gradient.success,
-  },
+  }
 ];
 
 export default function OnboardingScreen() {
@@ -132,13 +132,13 @@ export default function OnboardingScreen() {
             ]}
           >
             <LinearGradient
-              colors={slide.gradient as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
-              style={styles.iconContainer}
+              colors={slide.gradient as any}
+              style={styles.iconContainer as any}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
               {slide.id === 1 ? (
-                <Image
+                <Image 
                   source={require('@/assets/branding/logo.png')}
                   style={styles.logo}
                   resizeMode="contain"
@@ -162,7 +162,7 @@ export default function OnboardingScreen() {
               onPress={() => handleDotPress(index)}
               style={[
                 styles.dot,
-                currentIndex === index && styles.dotActive,
+                currentIndex === index && styles.dotActive
               ]}
             />
           ))}
@@ -177,8 +177,8 @@ export default function OnboardingScreen() {
 
           <TouchableOpacity onPress={handleNext} style={styles.nextButton}>
             <LinearGradient
-              colors={Colors.gradient.primary as unknown as readonly [ColorValue, ColorValue, ...ColorValue[]]}
-              style={styles.nextButtonGradient}
+              colors={Colors.gradient.primary as any}
+              style={styles.nextButtonGradient as any}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
