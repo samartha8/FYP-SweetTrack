@@ -12,9 +12,11 @@ import {
   X,
 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '@/hooks/use-translation';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Sparkles, Languages, Monitor, Goal } from 'lucide-react-native';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -73,21 +75,21 @@ export default function SettingsScreen() {
 
   // Use memoized styles based on dynamic palette and scale
   const themed = useMemo(() => ({
-    container: { backgroundColor: palette.backgroundSecondary },
-    header: { backgroundColor: palette.background, borderBottomColor: palette.border },
-    headerTitle: { color: palette.text, fontSize: scale(18) },
-    sectionTitle: { color: palette.text, fontSize: scale(18) },
-    card: { backgroundColor: palette.card, shadowColor: palette.cardShadow, borderColor: palette.border },
-    cardTitle: { color: palette.text, fontSize: scale(14) },
-    optionLabel: { color: palette.text, fontSize: scale(15) },
-    optionDescription: { color: palette.textSecondary, fontSize: scale(13) },
-    segmentButtonText: { fontSize: scale(14) },
-    segmentButtonTextActive: { fontSize: scale(14) },
-    resetButtonText: { fontSize: scale(16) },
-    footerText: { color: palette.textLight, fontSize: scale(12) },
-    numberInput: { borderColor: palette.border, backgroundColor: palette.backgroundSecondary, color: palette.text },
+    container: { flex: 1 },
+    header: { backgroundColor: 'transparent', borderBottomColor: 'transparent' },
+    headerTitle: { color: palette.text, fontSize: scale(20), fontWeight: '900' as const, letterSpacing: -1 },
+    sectionTitle: { color: palette.text, fontSize: scale(18), fontWeight: '900' as const, letterSpacing: -0.5 },
+    card: { backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 1 },
+    cardTitle: { color: palette.text, fontSize: scale(13), fontWeight: '800' as const, letterSpacing: 0.5, opacity: 0.7 },
+    optionLabel: { color: palette.text, fontSize: scale(15), fontWeight: '800' as const, letterSpacing: -0.3 },
+    optionDescription: { color: palette.textSecondary, fontSize: scale(12), fontWeight: '600' as const, lineHeight: 16, opacity: 0.6 },
+    segmentButtonText: { fontSize: scale(13), fontWeight: '700' as const },
+    segmentButtonTextActive: { fontSize: scale(13), fontWeight: '900' as const },
+    resetButtonText: { fontSize: scale(16), fontWeight: '800' as const },
+    footerText: { color: palette.textLight, fontSize: scale(11), fontWeight: '600' as const, opacity: 0.5 },
+    numberInput: { borderColor: 'rgba(0,0,0,0.1)', backgroundColor: 'rgba(255,255,255,0.8)', color: palette.text, fontWeight: '700' as const },
     saveButton: { backgroundColor: palette.primary },
-    saveButtonText: { fontSize: scale(16) },
+    saveButtonText: { fontSize: scale(16), fontWeight: '900' as const, letterSpacing: 0.5 },
   }), [palette, scale]);
 
   const API_BASE_URL = (() => {
@@ -200,16 +202,22 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
+    <LinearGradient
+      colors={['#F0FDF4', '#F0F9FF']} // Signature Metabolic Gradient
+      style={[styles.container, { paddingTop: insets.top }]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+    >
       <Stack.Screen options={{ headerShown: false }} />
-
 
       <View style={[styles.header, themed.header]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <X size={24} color={palette.text} strokeWidth={2} />
+          <X size={26} color={palette.text} strokeWidth={3} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, themed.headerTitle]}>{t.settings.header}</Text>
-        <View style={styles.headerButton} />
+        <Text style={[styles.headerTitle, themed.headerTitle]}>{t.settings.header.toUpperCase()}</Text>
+        <TouchableOpacity style={styles.headerButton}>
+          <Sparkles size={22} color={palette.primary} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -219,7 +227,7 @@ export default function SettingsScreen() {
       >
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Globe size={20} color={palette.primary} strokeWidth={2} />
+            <Languages size={20} color={palette.primary} strokeWidth={2.5} />
             <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.settings.language}</Text>
           </View>
           <View style={[styles.card, themed.card]}>
@@ -252,7 +260,7 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Eye size={20} color={palette.primary} strokeWidth={2} />
+            <Monitor size={20} color={palette.primary} strokeWidth={2.5} />
             <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.settings.display}</Text>
           </View>
 
@@ -506,7 +514,7 @@ export default function SettingsScreen() {
           </View>
         )}
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -541,7 +549,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   section: {
     marginBottom: 24,
@@ -561,11 +569,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.card,
     borderRadius: 12,
     padding: 16,
-    shadowColor: Colors.cardShadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    ...Platform.select({
+      web: { boxShadow: `0px 2px 8px ${Colors.cardShadow || 'rgba(0,0,0,0.1)'}` },
+      native: {
+        shadowColor: Colors.cardShadow || '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 3,
+      }
+    }),
     marginBottom: 12,
   },
   cardTitle: {
@@ -592,15 +605,10 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   optionLabel: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: Colors.text,
-    marginBottom: 4,
+    fontWeight: '800' as const,
   },
   optionDescription: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    lineHeight: 18,
+    lineHeight: 16,
   },
   radioOuter: {
     width: 24,
@@ -694,10 +702,15 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   mainSaveButton: {
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    ...Platform.select({
+      web: { boxShadow: `0px 4px 8px ${Colors.primary}4D` }, // 0.3 opacity
+      native: {
+        shadowColor: Colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
+      }
+    }),
   },
 });

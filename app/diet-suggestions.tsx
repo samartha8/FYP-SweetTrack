@@ -17,10 +17,14 @@ import {
   Target,
   Leaf,
   ChevronRight,
+  UtensilsCrossed,
+  Sparkles,
   CheckCircle2,
   Flame,
-  UtensilsCrossed,
 } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+
+import { useUser } from '@/contexts/UserContext';
 
 import { DIET_PLANS, DietPlan } from '@/constants/foodData';
 import { useMealTracking } from '@/contexts/MealTrackingContext';
@@ -40,14 +44,25 @@ export default function DietSuggestionsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { selectedDietPlan, setSelectedDietPlan } = useMealTracking();
+  const { user, riskStatus } = useUser();
+  
+  const recommendedPlanId = useMemo(() => {
+    if (riskStatus === 'Positive') return 'diabetic';
+    const highBP = user?.highBP ?? (user as any)?.healthData?.highBP;
+    if (highBP === 1) return 'heart-healthy';
+    const bmi = user?.bmi ?? (user as any)?.healthData?.bmi;
+    if (bmi && bmi > 25) return 'weight-loss';
+    return 'balanced';
+  }, [riskStatus, user]);
+
   const { colors, scale } = useTheme();
   const { t } = useTranslation();
   const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
 
   // Dynamic Styles
   const themed = useMemo(() => ({
-    container: { backgroundColor: colors.backgroundSecondary },
-    header: { backgroundColor: colors.background, borderBottomColor: colors.border },
+    container: { backgroundColor: 'transparent' },
+    header: { backgroundColor: 'transparent', borderBottomWidth: 0 },
     headerTitle: { color: colors.text, fontSize: scale(18) },
     introCard: { backgroundColor: colors.primary + '10' },
     introTitle: { color: colors.text, fontSize: scale(20) },
@@ -110,6 +125,12 @@ export default function DietSuggestionsScreen() {
                 <View style={[styles.selectedBadge, { backgroundColor: plan.color }]}>
                   <CheckCircle2 size={14} color={colors.textWhite} strokeWidth={2.5} />
                   <Text style={[styles.selectedBadgeText, themed.selectedBadgeText]}>{t.dietSuggestions.active}</Text>
+                </View>
+              )}
+              {plan.id === recommendedPlanId && !isSelected && (
+                <View style={[styles.selectedBadge, { backgroundColor: colors.warning + '20' }]}>
+                  <Sparkles size={12} color={colors.warning} strokeWidth={2.5} />
+                  <Text style={[styles.selectedBadgeText, themed.selectedBadgeText, { color: colors.warning }]}>AI Recommended</Text>
                 </View>
               )}
             </View>
@@ -212,12 +233,17 @@ export default function DietSuggestionsScreen() {
   };
 
   return (
-    <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
+    <LinearGradient 
+      colors={['#F0FDF4', '#F0F9FF']} 
+      style={[styles.container, { paddingTop: insets.top }]} 
+      start={{ x: 0, y: 0 }} 
+      end={{ x: 1, y: 1 }}
+    >
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={[styles.header, themed.header]}>
         <TouchableOpacity onPress={safeBack} style={styles.headerButton}>
-          <X size={24} color={colors.text} strokeWidth={2} />
+          <X size={24} color={colors.text} strokeWidth={2.5} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, themed.headerTitle]}>{t.dietSuggestions.header}</Text>
         <View style={styles.headerButton} />
@@ -252,7 +278,7 @@ export default function DietSuggestionsScreen() {
           </Text>
         </View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -266,7 +292,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    borderBottomWidth: 1,
   },
   headerButton: {
     width: 40,
@@ -285,19 +310,21 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   introCard: {
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 24,
+    padding: 24,
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 28,
   },
   introTitle: {
-    fontWeight: '700',
+    fontWeight: '800',
     marginTop: 12,
     marginBottom: 8,
+    letterSpacing: -0.5,
   },
   introText: {
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 22,
+    fontWeight: '500',
   },
   section: {
     marginBottom: 16,
@@ -309,23 +336,26 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
   },
   planCard: {
-    borderRadius: 16,
+    borderRadius: 24,
     marginBottom: 16,
     overflow: 'hidden',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)',
   },
   planHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 20,
   },
   planIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },

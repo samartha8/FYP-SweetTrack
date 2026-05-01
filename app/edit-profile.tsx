@@ -18,6 +18,7 @@ import { X, Save, User as UserIcon, Mail, Calendar, Ruler, Weight, Plus, Chevron
 import { useUser } from '@/contexts/UserContext';
 import { useTheme } from '@/contexts/SettingsContext';
 import { useTranslation } from '@/hooks/use-translation';
+import { LinearGradient } from 'expo-linear-gradient';
 
 
 export default function EditProfileScreen() {
@@ -52,39 +53,40 @@ export default function EditProfileScreen() {
   // Dynamic Styles
   const themed = useMemo(() => ({
     container: { backgroundColor: colors.backgroundSecondary },
-    header: { backgroundColor: colors.background, borderBottomColor: colors.border },
-    headerTitle: { color: colors.text, fontSize: scale(18) },
-    sectionTitle: { color: colors.text, fontSize: scale(20) },
-    inputGroup: { backgroundColor: colors.card, shadowColor: colors.cardShadow },
-    inputIcon: { backgroundColor: colors.primary + '20' },
-    inputLabel: { color: colors.textSecondary, fontSize: scale(12) },
-    input: { color: colors.text, fontSize: scale(15) },
-    genderButton: { backgroundColor: colors.backgroundSecondary, borderColor: colors.border },
+    header: { backgroundColor: 'transparent' },
+    headerTitle: { color: colors.text, fontSize: scale(20), fontWeight: '900' as const, letterSpacing: -1 },
+    sectionTitle: { color: colors.text, fontSize: scale(22), fontWeight: '900' as const, letterSpacing: -0.5 },
+    inputGroup: { backgroundColor: '#FFF', shadowColor: '#000' },
+    inputIcon: { backgroundColor: colors.primary + '15' },
+    inputLabel: { color: colors.textSecondary, fontSize: scale(11), fontWeight: '800' as const, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+    input: { color: colors.text, fontSize: scale(16), fontWeight: '700' as const },
+    genderButton: { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' },
     genderButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-    genderButtonText: { color: colors.text, fontSize: scale(14) },
-    genderButtonTextActive: { color: colors.textWhite },
+    genderButtonText: { color: colors.text, fontSize: scale(14), fontWeight: '700' as const },
+    genderButtonTextActive: { color: colors.textWhite, fontWeight: '800' as const },
     addConditionInput: {
-      backgroundColor: colors.card,
+      backgroundColor: '#FFF',
       color: colors.text,
-      borderColor: colors.border,
-      fontSize: scale(15)
+      borderColor: '#E2E8F0',
+      fontSize: scale(15),
+      fontWeight: '600' as const
     },
     addConditionButton: { backgroundColor: colors.primary },
-    conditionsList: { backgroundColor: colors.card },
-    conditionItem: { borderBottomColor: colors.backgroundSecondary },
-    conditionText: { color: colors.text, fontSize: scale(15) },
-    emptyText: { color: colors.textSecondary, fontSize: scale(14) },
-    saveButtonText: { color: colors.textWhite, fontSize: scale(16) },
-    saveButton: { backgroundColor: colors.primary, shadowColor: colors.cardShadow },
-    selectorText: { color: colors.text, fontSize: scale(15) },
-    modalOverlay: { backgroundColor: colors.overlay },
-    modalContent: { backgroundColor: colors.background },
-    modalHeader: { marginBottom: 20 },
-    modalTitle: { color: colors.text, fontSize: scale(20) },
-    modalItem: { borderBottomColor: colors.border },
+    conditionsList: { backgroundColor: '#FFF' },
+    conditionItem: { borderBottomColor: '#F1F5F9' },
+    conditionText: { color: colors.text, fontSize: scale(15), fontWeight: '700' as const },
+    emptyText: { color: colors.textSecondary, fontSize: scale(14), fontWeight: '600' as const },
+    saveButtonText: { color: colors.textWhite, fontSize: scale(18), fontWeight: '900' as const, letterSpacing: 1 },
+    saveButton: { backgroundColor: colors.primary },
+    selectorText: { color: colors.text, fontSize: scale(16), fontWeight: '700' as const },
+    modalOverlay: { backgroundColor: 'rgba(0,0,0,0.4)' },
+    modalContent: { backgroundColor: '#FFF' },
+    modalHeader: { marginBottom: 24 },
+    modalTitle: { color: colors.text, fontSize: scale(22), fontWeight: '900' as const, letterSpacing: -0.5 },
+    modalItem: { borderBottomColor: '#F1F5F9' },
     modalItemActive: { backgroundColor: colors.primary + '10' },
-    modalItemText: { color: colors.text, fontSize: scale(16) },
-    modalItemTextActive: { color: colors.primary },
+    modalItemText: { color: colors.text, fontSize: scale(17), fontWeight: '700' as const },
+    modalItemTextActive: { color: colors.primary, fontWeight: '800' as const },
   }), [colors, scale]);
 
   // Helper to get gender string from sex code
@@ -125,15 +127,25 @@ export default function EditProfileScreen() {
       const hMeters = h / 100;
       const bmi = w / (hMeters * hMeters);
 
-      // Matching health-setup.tsx formulas
-      const calculatedHba1c = 4.5 + (bmi - 25) * 0.03 + (age - 7) * 0.15 + genHlth * 0.4 + highChol * 0.8 + highBP * 0.6;
-      const calculatedGlucose = 85 + (bmi - 25) * 1.2 + (age - 7) * 3.0 + genHlth * 8 + highChol * 15 + highBP * 12;
+      // Only calculate estimates if BMI is within valid risk-model range
+      if (bmi >= 12 && bmi <= 98) {
+        // Matching health-setup.tsx formulas
+        const calculatedHba1c = 4.5 + (bmi - 25) * 0.03 + (age - 7) * 0.15 + genHlth * 0.4 + highChol * 0.8 + highBP * 0.6;
+        const calculatedGlucose = 85 + (bmi - 25) * 1.2 + (age - 7) * 3.0 + genHlth * 8 + highChol * 15 + highBP * 12;
 
-      setFormData(prev => ({
-        ...prev,
-        hba1c: Math.max(3.5, Math.min(15.0, calculatedHba1c)).toFixed(2),
-        glucose: Math.max(70, Math.min(300, calculatedGlucose)).toFixed(1),
-      }));
+        setFormData(prev => ({
+          ...prev,
+          hba1c: Math.max(3.5, Math.min(15.0, calculatedHba1c)).toFixed(2),
+          glucose: Math.max(70, Math.min(300, calculatedGlucose)).toFixed(1),
+        }));
+      } else {
+        // Clear estimates if BMI is out of safe bounds
+        setFormData(prev => ({
+          ...prev,
+          hba1c: '',
+          glucose: '',
+        }));
+      }
     }
   }, [formData.height, formData.weight, formData.age, formData.genHlth, formData.highChol, formData.highBP]);
 
@@ -163,6 +175,13 @@ export default function EditProfileScreen() {
       const w = parseFloat(formData.weight);
       if (!isNaN(h) && !isNaN(w) && h > 0) {
         calculatedBmi = Number((w / ((h / 100) ** 2)).toFixed(1));
+        
+        // Block save if BMI is out of range
+        if (calculatedBmi < 12 || calculatedBmi > 98) {
+          Alert.alert(t.profile.editScreen.errorTitle, t.healthSetup.fields.bmiRangeError);
+          setSaving(false);
+          return;
+        }
       }
 
       const updates = {
@@ -220,6 +239,10 @@ export default function EditProfileScreen() {
 
   return (
     <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
+      <LinearGradient
+        colors={['#F0FDF4', '#F0F9FF']}
+        style={StyleSheet.absoluteFill}
+      />
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={[styles.header, themed.header]}>
@@ -366,6 +389,41 @@ export default function EditProfileScreen() {
               />
             </View>
           </View>
+
+          {/* BMI Display */}
+          {(() => {
+            const h = parseFloat(formData.height);
+            const w = parseFloat(formData.weight);
+            if (!isNaN(h) && !isNaN(w) && h > 0) {
+              const bmi = Number((w / ((h / 100) ** 2)).toFixed(1));
+              const isInvalid = bmi < 12 || bmi > 98;
+              return (
+                <View style={[styles.inputGroup, themed.inputGroup, isInvalid && { borderColor: colors.error, borderWidth: 1 }]}>
+                  <View style={[styles.inputIcon, themed.inputIcon]}>
+                    <Activity size={20} color={isInvalid ? colors.error : colors.primary} strokeWidth={2} />
+                  </View>
+                  <View style={styles.inputWrapper}>
+                    <Text style={[styles.inputLabel, themed.inputLabel]}>{t.healthSetup.fields.bmi}</Text>
+                    <Text style={{ fontSize: 16, color: colors.text, fontWeight: '700' }}>
+                      {bmi}
+                    </Text>
+                    {isInvalid ? (
+                      <Text style={{ color: colors.error, fontSize: 12, marginTop: 4, fontWeight: '600' }}>
+                        {t.healthSetup.fields.bmiRangeError}
+                      </Text>
+                    ) : (
+                      <Text style={{ color: colors.textLight, fontSize: 12, marginTop: 4 }}>
+                        {bmi < 18.5 ? 'Underweight' :
+                          bmi < 25 ? 'Normal weight' :
+                            bmi < 30 ? 'Overweight' : 'Obese'}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              );
+            }
+            return null;
+          })()}
         </View>
 
         <View style={styles.section}>
@@ -658,7 +716,19 @@ export default function EditProfileScreen() {
         animationType="fade"
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: colors.card, padding: 24, borderRadius: 16, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84, elevation: 5 }}>
+          <View style={[
+            { backgroundColor: colors.card, padding: 24, borderRadius: 16, alignItems: 'center' },
+            Platform.select({
+              web: { boxShadow: '0px 2px 3.84px rgba(0, 0, 0, 0.25)' },
+              native: {
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.25,
+                shadowRadius: 3.84,
+                elevation: 5
+              }
+            })
+          ]}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={{ marginTop: 16, color: colors.text, fontSize: scale(16), fontWeight: '600' }}>{t.profile.editScreen.savingProfile}</Text>
           </View>
@@ -677,160 +747,184 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
+    paddingVertical: 18,
   },
   headerButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFF',
     alignItems: 'center',
     justifyContent: 'center',
+    ...Platform.select({
+      web: { boxShadow: '0px 4px 10px rgba(0,0,0,0.05)' },
+      native: { elevation: 3, shadowOpacity: 0.1, shadowRadius: 5, shadowColor: '#000' }
+    })
   },
   headerTitle: {
-    fontWeight: '700',
+    fontWeight: '900',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 24,
+    paddingBottom: 60,
   },
   section: {
-    marginBottom: 32,
+    marginBottom: 36,
   },
   sectionTitle: {
-    fontWeight: '700',
-    marginBottom: 16,
+    fontWeight: '900',
+    marginBottom: 20,
   },
   inputGroup: {
     flexDirection: 'row',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)',
+    ...Platform.select({
+      web: { boxShadow: '0px 8px 20px rgba(0, 0, 0, 0.06)' },
+      native: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.06,
+        shadowRadius: 15,
+        elevation: 4,
+      }
+    }),
   },
   inputIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   inputWrapper: {
     flex: 1,
+    justifyContent: 'center',
   },
   inputLabel: {
-    marginBottom: 6,
-    fontWeight: '600',
+    marginBottom: 4,
   },
   input: {
-    paddingVertical: Platform.OS === 'ios' ? 8 : 4,
+    paddingVertical: Platform.OS === 'ios' ? 4 : 0,
   },
   genderContainer: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
+    gap: 10,
+    marginTop: 8,
   },
   genderButton: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: 1.5,
     alignItems: 'center',
   },
   genderButtonActive: {
   },
   genderButtonText: {
-    fontWeight: '600',
+    fontWeight: '800',
   },
   genderButtonTextActive: {
   },
   addConditionContainer: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   addConditionInput: {
     flex: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     marginRight: 12,
-    borderWidth: 1,
+    borderWidth: 2,
   },
   addConditionButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Platform.select({
+      web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.1)' },
+      native: { elevation: 4, shadowOpacity: 0.1, shadowRadius: 8, shadowColor: '#000' }
+    })
   },
   conditionsList: {
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 24,
+    padding: 24,
+    ...Platform.select({
+      web: { boxShadow: '0px 8px 20px rgba(0, 0, 0, 0.06)' },
+      native: { elevation: 3, shadowOpacity: 0.06, shadowRadius: 15, shadowColor: '#000' }
+    })
   },
   conditionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
+    paddingVertical: 14,
+    borderBottomWidth: 1.5,
   },
   conditionText: {
     flex: 1,
   },
   removeButton: {
-    padding: 4,
+    padding: 6,
   },
   emptyText: {
     textAlign: 'center',
     fontStyle: 'italic',
   },
   saveButton: {
-    borderRadius: 12,
-    paddingVertical: 16,
+    borderRadius: 22,
+    paddingVertical: 20,
     alignItems: 'center',
-    marginTop: 8,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    marginTop: 24,
+    ...Platform.select({
+      web: { boxShadow: '0px 10px 20px rgba(0, 0, 0, 0.15)' },
+      native: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.15,
+        shadowRadius: 15,
+        elevation: 8,
+      }
+    }),
   },
   saveButtonText: {
-    fontWeight: '700',
   },
   selectorButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: Platform.OS === 'ios' ? 8 : 4,
+    paddingVertical: Platform.OS === 'ios' ? 6 : 0,
   },
   selectorText: {
   },
   modalOverlay: {
     flex: 1,
-    paddingTop: 100, // Just a safe area top padding
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    height: '60%',
-    padding: 20,
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    height: '70%',
+    padding: 28,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: -2,
+      height: -10,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 20,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -838,23 +932,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalTitle: {
-    fontWeight: '700',
   },
   modalItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
+    paddingVertical: 18,
+    borderBottomWidth: 1.5,
   },
   modalItemActive: {
-    marginHorizontal: -20,
-    paddingHorizontal: 20,
+    marginHorizontal: -28,
+    paddingHorizontal: 28,
   },
   modalItemText: {
   },
   modalItemTextActive: {
-    fontWeight: '600',
   },
   row: {
     flexDirection: 'row',
@@ -862,28 +954,27 @@ const styles = StyleSheet.create({
   },
   toggleContainer: {
     flexDirection: 'row',
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
-    padding: 2,
-    marginTop: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
+    marginTop: 10,
   },
   toggleButton: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: 10,
   },
   toggleButtonActive: {
-    // backgroundColor set dynamically
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    elevation: 3,
   },
   toggleText: {
     fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
+    color: '#64748B',
+    fontWeight: '700',
   },
   toggleTextActive: {
     color: '#FFF',
@@ -891,6 +982,6 @@ const styles = StyleSheet.create({
   labelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
 });

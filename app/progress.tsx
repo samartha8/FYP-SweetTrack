@@ -8,100 +8,51 @@ import {
   Image,
   TextStyle,
   ViewStyle,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, Flame, Wheat, Beef, Droplets, TrendingUp, Calendar, UtensilsCrossed } from 'lucide-react-native';
+import { X, Flame, Wheat, Beef, Droplets, TrendingUp, Calendar, UtensilsCrossed, ArrowLeft, Sparkles, Activity } from 'lucide-react-native';
 import { useMealTracking } from '@/contexts/MealTrackingContext';
 import { useTheme } from '@/contexts/SettingsContext';
 import { useMemo } from 'react';
 import { useTranslation } from '@/hooks/use-translation';
+import Animated, { FadeInDown, FadeInUp, Layout, ZoomIn } from 'react-native-reanimated';
 
+const { width } = Dimensions.get('window');
 const BAR_MAX_HEIGHT = 150;
 
 export default function ProgressScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { todayNutrition, weeklyStats, getDailyNutritionForWeek, getTodayMeals } = useMealTracking();
+  const { todayNutrition, weeklyStats, getDailyNutritionForWeek, getTodayMeals, activeDietDetails } = useMealTracking();
   const { colors, scale } = useTheme();
   const { t } = useTranslation();
 
-  // Dynamic Styles
   const themed = useMemo(() => ({
-    container: { backgroundColor: colors.backgroundSecondary },
-    header: { backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
-    headerTitle: { color: colors.text, fontSize: scale(19), fontWeight: '700', letterSpacing: -0.5 },
-    sectionTitle: { color: colors.text, fontSize: scale(20), fontWeight: '800', letterSpacing: -0.5 },
-    summaryCard: {
-      backgroundColor: colors.card,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.1,
-      shadowRadius: 24,
-      elevation: 8,
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.8)',
-    },
-    calorieValue: { color: '#ffffff', fontSize: scale(42), fontWeight: '900', letterSpacing: -1 },
-    calorieLabel: { color: 'rgba(255,255,255,0.8)', fontSize: scale(14), fontWeight: '600' },
-    progressRing: { backgroundColor: 'rgba(255,255,255,0.2)' },
-    progressRingInner: { backgroundColor: 'transparent' },
-    progressPercentage: { color: '#ffffff', fontSize: scale(18), fontWeight: '800' },
-    mealsLoggedInfo: { borderTopColor: 'rgba(255,255,255,0.2)', borderTopWidth: 1, paddingTop: 16 },
-    mealsLoggedText: { color: 'rgba(255,255,255,0.9)', fontSize: scale(15), fontWeight: '600' },
-    macroCard: {
-      backgroundColor: 'rgba(255,255,255,0.7)',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.05,
-      shadowRadius: 12,
-      elevation: 4,
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.8)',
-    },
-    macroValue: { color: colors.text, fontSize: scale(22), fontWeight: '800', letterSpacing: -0.5 },
-    macroLabel: { color: colors.textSecondary, fontSize: scale(13), fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-    chartCard: {
-      backgroundColor: '#ffffff',
+    container: { backgroundColor: 'transparent' },
+    headerTitle: { color: colors.text, fontSize: scale(24), fontWeight: '900' as const, letterSpacing: -1 },
+    sectionTitle: { color: colors.text, fontSize: scale(20), fontWeight: '900' as const, letterSpacing: -0.5 },
+    card: { 
+      backgroundColor: '#FFF', 
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 10 },
       shadowOpacity: 0.08,
-      shadowRadius: 30,
-      elevation: 10,
-      borderWidth: 1,
-      borderColor: 'rgba(0,0,0,0.03)',
-    },
-    chartTitle: { color: colors.text, fontSize: scale(17), fontWeight: '700', letterSpacing: -0.3 },
-    barLabel: { color: colors.textSecondary, fontSize: scale(12), fontWeight: '700' },
-    barValue: { color: colors.primary, fontSize: scale(11), fontWeight: '800' },
-    chartLegend: { borderTopColor: 'rgba(0,0,0,0.05)', borderTopWidth: 1 },
-    legendText: { color: colors.textSecondary, fontSize: scale(13), fontWeight: '600' },
-    statCard: {
-      backgroundColor: 'rgba(255,255,255,0.8)',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.06,
-      shadowRadius: 16,
+      shadowRadius: 20,
       elevation: 5,
+      borderRadius: 32,
       borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.9)',
+      borderColor: 'rgba(0,0,0,0.03)'
     },
-    statValue: { color: colors.text, fontSize: scale(26), fontWeight: '900', letterSpacing: -0.8 },
-    statLabel: { color: colors.textSecondary, fontSize: scale(14), fontWeight: '600' },
-    tipTitle: { color: colors.success, fontSize: scale(17), fontWeight: '800' },
-    tipText: { color: colors.textSecondary, fontSize: scale(15), lineHeight: 22 },
-    tipCard: {
-      backgroundColor: '#ffffff',
-      borderLeftColor: colors.success,
-      borderLeftWidth: 6,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.05,
-      shadowRadius: 12,
-      elevation: 3,
-    },
-  } as any), [colors, scale]);
+    calorieValue: { color: '#ffffff', fontSize: scale(48), fontWeight: '900' as const, letterSpacing: -1.5 },
+    calorieLabel: { color: 'rgba(255,255,255,0.9)', fontSize: scale(14), fontWeight: '700' as const },
+    macroValue: { color: colors.text, fontSize: scale(20), fontWeight: '900' as const, letterSpacing: -0.5 },
+    macroLabel: { color: colors.textSecondary, fontSize: scale(11), fontWeight: '800' as const, textTransform: 'uppercase' as const, letterSpacing: 1 },
+    statValue: { color: colors.text, fontSize: scale(28), fontWeight: '900' as const, letterSpacing: -1 },
+    statLabel: { color: colors.textSecondary, fontSize: scale(13), fontWeight: '700' as const },
+  }), [colors, scale]);
 
   const dailyData = getDailyNutritionForWeek;
   const maxCalories = Math.max(...dailyData.map(d => d.calories), 1);
@@ -112,226 +63,152 @@ export default function ProgressScreen() {
     return days[date.getDay()];
   };
 
-  const calorieGoal = 2000;
+  const calorieGoal = activeDietDetails?.dailyCalorieTarget || 2000;
   const calorieProgress = Math.min((todayNutrition.calories / calorieGoal) * 100, 100);
 
-  const safeBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/');
-    }
-  };
+  const macroGoalProtein = Math.round((calorieGoal * ((activeDietDetails?.macroRatio?.protein || 25) / 100)) / 4);
+  const macroGoalCarbs = Math.round((calorieGoal * ((activeDietDetails?.macroRatio?.carbs || 50) / 100)) / 4);
+  const macroGoalFat = Math.round((calorieGoal * ((activeDietDetails?.macroRatio?.fat || 25) / 100)) / 9);
 
   return (
-    <View style={[styles.container, themed.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
+      <LinearGradient colors={['#F0FDF4', '#F0F9FF']} style={StyleSheet.absoluteFill} />
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[styles.header, themed.header]}>
-        <TouchableOpacity onPress={safeBack} style={styles.headerButton}>
-          <X size={24} color={colors.text} strokeWidth={2} />
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={28} color={colors.text} strokeWidth={2.5} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, themed.headerTitle]}>{t.progress.header}</Text>
-        <View style={styles.headerButton} />
+        <Text style={themed.headerTitle}>Progress Hub</Text>
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Calendar size={20} color={colors.primary} strokeWidth={2} />
-            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.progress.todaySummary}</Text>
-          </View>
-
+        {/* Today Summary Card */}
+        <Animated.View entering={FadeInUp} style={styles.section}>
           <LinearGradient
-            colors={[colors.primary, colors.secondary]}
+            colors={['#00B4D8', '#0077B6']}
+            style={[styles.summaryCard, themed.card]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.summaryCard, themed.summaryCard]}
           >
-            <View style={styles.calorieProgressContainer}>
-              <View style={styles.calorieProgressInfo}>
-                <Text style={[styles.calorieValue, themed.calorieValue]}>{Math.round(todayNutrition.calories || 0)}</Text>
-                <Text style={[styles.calorieLabel, themed.calorieLabel]}>{t.progress.kcalOf} {calorieGoal} {t.wellness.unitCalories}</Text>
+            <View style={styles.summaryHeader}>
+              <View style={styles.summaryInfo}>
+                <Text style={themed.calorieLabel}>CALORIES TODAY</Text>
+                <Text style={themed.calorieValue}>{Math.round(todayNutrition.calories || 0)}</Text>
+                <Text style={[themed.calorieLabel, { opacity: 0.8 }]}>Target: {calorieGoal} kcal</Text>
               </View>
-              <View style={[styles.progressRing, themed.progressRing]}>
-                <View
-                  style={[
-                    styles.progressRingFill,
-                    {
-                      width: '100%',
-                      height: `${calorieProgress}%`,
-                      bottom: 0,
-                      backgroundColor: 'rgba(255,255,255,0.3)',
-                      borderRadius: 0,
-                    },
-                  ]}
-                />
-                <View style={[styles.progressRingInner, themed.progressRingInner]}>
-                  <Text style={[styles.progressPercentage, themed.progressPercentage]}>{Math.round(calorieProgress)}%</Text>
-                </View>
+              <View style={styles.progressCircle}>
+                <View style={[styles.progressRingBg, { borderColor: 'rgba(255,255,255,0.2)' }]} />
+                <View style={[styles.progressRingFill, { height: `${calorieProgress}%`, backgroundColor: 'rgba(255,255,255,0.3)' }]} />
+                <Text style={styles.progressText}>{Math.round(calorieProgress)}%</Text>
               </View>
             </View>
 
-            <View style={[styles.mealsLoggedInfo, themed.mealsLoggedInfo]}>
-              <View style={styles.mealsLoggedBadge}>
-                <UtensilsCrossed size={16} color="#ffffff" strokeWidth={2.5} />
-                <Text style={[styles.mealsLoggedText, themed.mealsLoggedText]}>
-                  {(getTodayMeals?.length || 0)} {t.progress.mealsLoggedToday}
-                </Text>
-              </View>
+            <View style={styles.summaryFooter}>
+              <UtensilsCrossed size={18} color="#FFF" strokeWidth={2.5} />
+              <Text style={styles.summaryFooterText}>
+                {getTodayMeals?.length || 0} meals logged today
+              </Text>
             </View>
           </LinearGradient>
+        </Animated.View>
 
-          <View style={styles.macroGrid}>
-            <View style={[styles.macroCard, themed.macroCard, { backgroundColor: (colors.chart?.glucose || '#30D158') + '15' }]}>
-              <View style={[styles.macroIcon, { backgroundColor: (colors.chart?.glucose || '#30D158') + '20' }]}>
-                <Wheat size={scale(22)} color={colors.chart?.glucose || '#30D158'} strokeWidth={2.5} />
+        {/* Macros Grid */}
+        <View style={styles.macroGrid}>
+          {[
+            { icon: Wheat, label: 'Carbs', value: `${Math.round(todayNutrition.carbs)}/${macroGoalCarbs}g`, color: '#10B981', delay: 100 },
+            { icon: Beef, label: 'Protein', value: `${Math.round(todayNutrition.protein)}/${macroGoalProtein}g`, color: '#EF4444', delay: 200 },
+            { icon: Droplets, label: 'Fat', value: `${Math.round(todayNutrition.fat)}/${macroGoalFat}g`, color: '#3B82F6', delay: 300 },
+          ].map((macro, idx) => (
+            <Animated.View 
+              key={idx} 
+              entering={FadeInDown.delay(macro.delay)}
+              style={[styles.macroCard, themed.card]}
+            >
+              <View style={[styles.macroIconBox, { backgroundColor: macro.color + '15' }]}>
+                <macro.icon size={22} color={macro.color} strokeWidth={2.5} />
               </View>
-              <Text style={[styles.macroValue, themed.macroValue]}>{todayNutrition.carbs}{t.wellness.unitG}</Text>
-              <Text style={[styles.macroLabel, themed.macroLabel]}>{t.progress.carbs}</Text>
-            </View>
-
-            <View style={[styles.macroCard, themed.macroCard, { backgroundColor: colors.error + '12' }]}>
-              <View style={[styles.macroIcon, { backgroundColor: colors.error + '20' }]}>
-                <Beef size={scale(22)} color={colors.error} strokeWidth={2.5} />
-              </View>
-              <Text style={[styles.macroValue, themed.macroValue]}>{todayNutrition.protein}{t.wellness.unitG}</Text>
-              <Text style={[styles.macroLabel, themed.macroLabel]}>{t.progress.protein}</Text>
-            </View>
-
-            <View style={[styles.macroCard, themed.macroCard, { backgroundColor: colors.secondary + '12' }]}>
-              <View style={[styles.macroIcon, { backgroundColor: colors.secondary + '20' }]}>
-                <Droplets size={scale(22)} color={colors.secondary} strokeWidth={2.5} />
-              </View>
-              <Text style={[styles.macroValue, themed.macroValue]}>{todayNutrition.fat}{t.wellness.unitG}</Text>
-              <Text style={[styles.macroLabel, themed.macroLabel]}>{t.progress.fat}</Text>
-            </View>
-          </View>
+              <Text style={themed.macroValue}>{macro.value}</Text>
+              <Text style={themed.macroLabel}>{macro.label}</Text>
+            </Animated.View>
+          ))}
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <TrendingUp size={20} color={colors.primary} strokeWidth={2} />
-            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.progress.trends7Day}</Text>
-          </View>
-
-          <View style={[styles.chartCard, themed.chartCard]}>
+        {/* Weekly Chart */}
+        <Animated.View entering={FadeInDown.delay(400)} style={styles.section}>
+          <Text style={[themed.sectionTitle, { marginBottom: 16 }]}>Weekly Insight</Text>
+          <View style={[styles.chartCard, themed.card]}>
             <View style={styles.chartHeader}>
-              <Flame size={18} color={colors.warning} strokeWidth={2} />
-              <Text style={[styles.chartTitle, themed.chartTitle]}>{t.progress.dailyCalorieIntake}</Text>
+              <TrendingUp size={22} color={colors.primary} strokeWidth={2.5} />
+              <Text style={[themed.sectionTitle, { fontSize: 18 }]}>Calories Intake</Text>
             </View>
 
-            <View style={styles.chart}>
+            <View style={styles.chartContainer}>
               {dailyData.map((day, index) => {
                 const barHeight = (day.calories / maxCalories) * BAR_MAX_HEIGHT;
                 const isToday = index === dailyData.length - 1;
 
                 return (
-                  <View key={day.date} style={styles.barContainer}>
-                    <View style={styles.barWrapper}>
-                      {day.calories > 0 && (
-                        <Text style={[styles.barValue, themed.barValue]}>{Math.round(day.calories)}</Text>
-                      )}
-                      {day.calories > 0 ? (
-                        <LinearGradient
-                          colors={[
-                            isToday ? colors.primary : '#E0E0E0',
-                            isToday ? colors.secondary : '#BDBDBD'
-                          ]}
-                          style={[
-                            styles.bar,
-                            {
-                              height: Math.max(barHeight, 4),
-                            },
-                            isToday && {
-                              shadowColor: colors.primary,
-                              shadowOffset: { width: 0, height: 0 },
-                              shadowOpacity: 0.5,
-                              shadowRadius: 10,
-                              elevation: 5,
-                            }
-                          ]}
-                        />
-                      ) : (
-                        <View style={[styles.emptyBarDot, { backgroundColor: colors.border }]} />
-                      )}
+                  <View key={index} style={styles.barColumn}>
+                    <View style={styles.barTrack}>
+                      <LinearGradient
+                        colors={isToday ? ['#00B4D8', '#0077B6'] : ['#F1F5F9', '#E2E8F0']}
+                        style={[styles.barFill, { height: Math.max(barHeight, 8) }]}
+                      />
                     </View>
-                    <Text style={[
-                      styles.barLabel,
-                      themed.barLabel,
-                      isToday && { color: colors.primary, fontWeight: '700' }
-                    ]}>
+                    <Text style={[styles.dayLabel, isToday && { color: colors.primary, fontWeight: '900' }]}>
                       {getDayLabel(day.date)}
                     </Text>
                   </View>
                 );
               })}
             </View>
-
-            <View style={[styles.chartLegend, themed.chartLegend]}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-                <Text style={[styles.legendText, themed.legendText]}>{t.progress.today}</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: colors.chart?.glucose || '#30D158' }]} />
-                <Text style={[styles.legendText, themed.legendText]}>{t.progress.previousDays}</Text>
-              </View>
-            </View>
           </View>
-        </View>
+        </Animated.View>
 
+        {/* Stats Grid */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.progress.weeklyStatistics}</Text>
-
+          <Text style={[themed.sectionTitle, { marginBottom: 16 }]}>Performance Stats</Text>
           <View style={styles.statsGrid}>
-            <View style={[styles.statCard, themed.statCard]}>
-              <View style={[styles.statIcon, { backgroundColor: colors.warning + '20' }]}>
-                <Flame size={scale(24)} color={colors.warning} strokeWidth={2.5} />
-              </View>
-              <Text style={[styles.statValue, themed.statValue]}>{weeklyStats.avgCalories}</Text>
-              <Text style={[styles.statLabel, themed.statLabel]}>{t.progress.avgDailyCalories}</Text>
-            </View>
-
-            <View style={[styles.statCard, themed.statCard]}>
-              <View style={[styles.statIcon, { backgroundColor: colors.primary + '20' }]}>
-                <UtensilsCrossed size={scale(24)} color={colors.primary} strokeWidth={2.5} />
-              </View>
-              <Text style={[styles.statValue, themed.statValue]}>{weeklyStats.mealsLogged}</Text>
-              <Text style={[styles.statLabel, themed.statLabel]}>{t.progress.mealsLogged}</Text>
-            </View>
-
-            <View style={[styles.statCard, themed.statCard]}>
-              <View style={[styles.statIcon, { backgroundColor: colors.error + '20' }]}>
-                <Beef size={scale(24)} color={colors.error} strokeWidth={2.5} />
-              </View>
-              <Text style={[styles.statValue, themed.statValue]}>{weeklyStats.totalProtein}{t.wellness.unitG}</Text>
-              <Text style={[styles.statLabel, themed.statLabel]}>{t.progress.totalProtein}</Text>
-            </View>
-
-            <View style={[styles.statCard, themed.statCard]}>
-              <View style={[styles.statIcon, { backgroundColor: (colors.chart?.glucose || '#30D158') + '20' }]}>
-                <Wheat size={scale(24)} color={colors.chart?.glucose || '#30D158'} strokeWidth={2.5} />
-              </View>
-              <Text style={[styles.statValue, themed.statValue]}>{weeklyStats.totalCarbs}{t.wellness.unitG}</Text>
-              <Text style={[styles.statLabel, themed.statLabel]}>{t.progress.totalCarbs}</Text>
-            </View>
+            {[
+              { label: 'Avg Calories', value: weeklyStats.avgCalories, icon: Flame, color: '#F59E0B' },
+              { label: 'Logged Meals', value: weeklyStats.mealsLogged, icon: UtensilsCrossed, color: '#3B82F6' },
+              { label: 'Total Protein', value: `${weeklyStats.totalProtein}g`, icon: Beef, color: '#EF4444' },
+              { label: 'Total Carbs', value: `${weeklyStats.totalCarbs}g`, icon: Wheat, color: '#10B981' },
+            ].map((stat, idx) => (
+              <Animated.View 
+                key={idx} 
+                entering={FadeInDown.delay(500 + idx * 50)}
+                style={[styles.statCard, themed.card]}
+              >
+                <View style={[styles.statIconBox, { backgroundColor: stat.color + '10' }]}>
+                  <stat.icon size={22} color={stat.color} strokeWidth={2.5} />
+                </View>
+                <Text style={themed.statValue}>{stat.value}</Text>
+                <Text style={themed.statLabel}>{stat.label}</Text>
+              </Animated.View>
+            ))}
           </View>
         </View>
 
-        <View style={[styles.tipCard, themed.tipCard]}>
-          <TrendingUp size={32} color={colors.success} strokeWidth={2.5} />
+        {/* Motivation Tip */}
+        <Animated.View entering={FadeInDown.delay(700)} style={[styles.tipCard, themed.card]}>
+          <View style={styles.tipIconBox}>
+            <Sparkles size={28} color={colors.primary} strokeWidth={2.5} />
+          </View>
           <View style={styles.tipContent}>
-            <Text style={[styles.tipTitle, themed.tipTitle]}>{t.progress.keepUp}</Text>
-            <Text style={[styles.tipText, themed.tipText]}>
-              {t.progress.keepUpDesc}
+            <Text style={[themed.sectionTitle, { fontSize: 18 }]}>Metabolic Power</Text>
+            <Text style={styles.tipText}>
+              Consistently logging your meals helps the AI accurately predict your glycemic response and optimizes your metabolic health.
             </Text>
           </View>
-        </View>
+        </Animated.View>
+
       </ScrollView>
     </View>
   );
@@ -345,202 +222,133 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
+    paddingHorizontal: 24,
+    paddingBottom: 20,
   },
-  headerButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
+  backButton: {
+    width: 44,
+    height: 44,
     justifyContent: 'center',
-  },
-  headerTitle: {
-    fontWeight: '700',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    paddingHorizontal: 24,
+    paddingTop: 16,
   },
   section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 8,
-  },
-  sectionTitle: {
-    fontWeight: '700',
+    marginBottom: 32,
   },
   summaryCard: {
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 16,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 5,
+    padding: 32,
+    borderRadius: 40,
+    overflow: 'hidden',
   },
-  calorieProgressContainer: {
+  summaryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  calorieProgressInfo: {
+  summaryInfo: {
     flex: 1,
   },
-  calorieValue: {
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  calorieLabel: {
-  },
-  progressRing: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
+  progressCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
+    alignItems: 'center',
     overflow: 'hidden',
     position: 'relative',
   },
+  progressRingBg: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 6,
+  },
   progressRingFill: {
     position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    bottom: 0,
+    width: '100%',
   },
-  progressRingInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+  progressText: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '900',
     zIndex: 1,
   },
-  progressPercentage: {
-    fontWeight: '700',
-  },
-  mealsLoggedInfo: {
-    borderTopWidth: 1,
-    marginTop: 16,
-  },
-  mealsLoggedBadge: {
+  summaryFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(0,0,0,0.03)',
-    borderRadius: 12,
+    marginTop: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.2)',
+    gap: 12,
   },
-  mealsLoggedText: {
+  summaryFooterText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
   macroGrid: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 32,
   },
   macroCard: {
     flex: 1,
-    borderRadius: 12,
-    padding: 16,
+    padding: 20,
     alignItems: 'center',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
   },
-  macroIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
+  macroIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 12,
   },
-  macroValue: {
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  macroLabel: {
-  },
   chartCard: {
-    borderRadius: 24,
-    padding: 24,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 5,
+    padding: 28,
   },
   chartHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    gap: 8,
+    gap: 12,
+    marginBottom: 32,
   },
-  chartTitle: {
-    fontWeight: '600',
-  },
-  chart: {
+  chartContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    height: BAR_MAX_HEIGHT + 50,
-    paddingHorizontal: 8,
-    marginBottom: 16,
+    alignItems: 'flex-end',
+    height: BAR_MAX_HEIGHT + 40,
   },
-  barContainer: {
-    flex: 1,
+  barColumn: {
     alignItems: 'center',
+    width: (width - 48 - 56) / 7,
   },
-  barWrapper: {
-    alignItems: 'center',
-    marginBottom: 8,
-    height: BAR_MAX_HEIGHT + 20,
+  barTrack: {
+    width: 14,
+    height: BAR_MAX_HEIGHT,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 7,
     justifyContent: 'flex-end',
+    overflow: 'hidden',
   },
-  bar: {
-    width: 32,
-    borderRadius: 6,
-    minHeight: 4,
+  barFill: {
+    width: '100%',
+    borderRadius: 7,
   },
-  emptyBarDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginBottom: 4,
-  },
-  barValue: {
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  barLabel: {
-    marginTop: 8,
-  },
-  chartLegend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 20,
-    paddingTop: 12,
-    borderTopWidth: 1,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendText: {
+  dayLabel: {
+    marginTop: 12,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -548,46 +356,41 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   statCard: {
-    width: '48%',
-    borderRadius: 20,
-    padding: 20,
+    width: (width - 48 - 12) / 2,
+    padding: 24,
     alignItems: 'center',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 4,
   },
-  statIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
+  statIconBox: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
     justifyContent: 'center',
-    marginBottom: 12,
-  },
-  statValue: {
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  statLabel: {
-    textAlign: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   tipCard: {
     flexDirection: 'row',
+    padding: 28,
+    gap: 20,
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  tipIconBox: {
+    width: 60,
+    height: 60,
     borderRadius: 20,
-    padding: 20,
-    gap: 16,
-    borderLeftWidth: 6,
-    marginTop: 8,
+    backgroundColor: '#F0F9FF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   tipContent: {
     flex: 1,
   },
-  tipTitle: {
-    fontWeight: '700',
-    marginBottom: 6,
-  },
   tipText: {
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 22,
+    color: '#64748B',
+    fontWeight: '600',
+    marginTop: 4,
   },
 });

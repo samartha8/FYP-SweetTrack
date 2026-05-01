@@ -1,12 +1,27 @@
-import Colors from '@/constants/colors';
-import { User, useUser } from '@/contexts/UserContext';
+import React, { useState, useMemo } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  TextInput, 
+  KeyboardAvoidingView, 
+  Platform, 
+  ScrollView, 
+  ActivityIndicator,
+  Dimensions,
+  Image
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Eye, EyeOff, Heart, Lock, Mail } from 'lucide-react-native';
-import { useState } from 'react';
-import { ColorValue, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Eye, EyeOff, Lock, Mail, ArrowRight, Github, Sparkles } from 'lucide-react-native';
+import { useUser } from '@/contexts/UserContext';
 import { useTranslation } from '@/hooks/use-translation';
+import { useTheme } from '@/contexts/SettingsContext';
 import LanguageSelector from '@/components/LanguageSelector';
+import Animated, { FadeInDown, FadeInUp, ZoomIn } from 'react-native-reanimated';
+
+const { width } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -14,230 +29,296 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  
   const router = useRouter();
-  const { login, signInWithGoogle, hasHealthSetup, user } = useUser();
+  const { login, signInWithGoogle } = useUser();
   const { t } = useTranslation();
+  const { colors, scale } = useTheme();
 
   const handleLogin = async () => {
-    setErrorMsg('');
     if (!email || !password) {
-      setErrorMsg(t.auth.errorMissing);
+      setErrorMsg(t.auth.fillAllFields || 'Please fill all fields');
       return;
     }
-
     setIsLoading(true);
-    try {
-      const result = await login(email, password); // calls your backend
-      setIsLoading(false);
-
-      if (result.success) {
-        // Returning users go directly to Dashboard
-        router.replace('/(tabs)/home' as any);
-      } else {
-        setErrorMsg(result.message || t.auth.errorFailed);
-      }
-    } catch (err) {
-      setIsLoading(false);
-      setErrorMsg(t.auth.errorGeneral);
-      console.error('Login error:', err);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
     setErrorMsg('');
-    setIsLoading(true);
     try {
-      const result = await signInWithGoogle() as { success: boolean; user?: User | null; needsHealthSetup?: boolean; message?: string };
-      setIsLoading(false);
-
-      if (result.success) {
-        // Navigate based on the user data returned from signInWithGoogle
-        // This avoids race conditions with state updates
-        const needsHealthSetup = result.needsHealthSetup ?? !(result.user?.healthSetupCompleted ?? false);
-
-        if (needsHealthSetup) {
-          // New user - go to health setup (same flow as manual signup)
-          router.replace('/health-setup' as any);
-        } else {
-          // Existing user with health setup complete - go to dashboard
-          router.replace('/(tabs)/home' as any);
-        }
+      const success = await login(email, password);
+      if (!success) {
+        setErrorMsg(t.auth.invalidCredentials || 'Invalid credentials');
       } else {
-        setErrorMsg(result.message || t.auth.errorGoogle);
+        router.replace('/(tabs)/home' as any);
       }
-    } catch (err) {
+    } catch (error) {
+      setErrorMsg(t.auth.errorLogin || 'Login error occurred');
+    } finally {
       setIsLoading(false);
-      setErrorMsg(t.auth.errorGeneral);
-      console.error('Google Sign-In error:', err);
     }
   };
 
-  console.log('Rendering LoginScreen');
+  const themed = useMemo(() => ({
+    title: { color: colors.text, fontSize: scale(42), fontWeight: '900' as const, letterSpacing: -2 },
+    subtitle: { color: colors.textSecondary, fontSize: scale(16), fontWeight: '600' as const, marginTop: 8 },
+    inputContainer: { 
+      backgroundColor: '#FFF', 
+      borderRadius: 20, 
+      borderWidth: 1, 
+      borderColor: 'rgba(0,0,0,0.05)',
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      paddingHorizontal: 16,
+      height: 60,
+      marginBottom: 16,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.05,
+      shadowRadius: 10,
+      elevation: 2,
+    },
+    loginBtn: {
+      height: 60,
+      borderRadius: 20,
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      overflow: 'hidden' as const,
+      marginTop: 20,
+      shadowColor: '#00B4D8',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+    loginBtnText: { color: '#FFF', fontSize: 18, fontWeight: '900' as const, letterSpacing: -0.5 },
+    socialBtn: {
+      flex: 1,
+      height: 56,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: 'rgba(0,0,0,0.05)',
+      backgroundColor: '#FFF',
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      gap: 12,
+    },
+  }), [colors, scale]);
+
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <LanguageSelector />
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('@/assets/branding/logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </View>
-          <Text style={styles.title}>SweetTrack</Text>
-          <Text style={styles.subtitle}>{t.auth.subtitle}</Text>
+      <LinearGradient colors={['#F0FDF4', '#F0F9FF']} style={StyleSheet.absoluteFill} />
+      
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.topSection}>
+           <Animated.View entering={ZoomIn.delay(200)} style={styles.logoContainer}>
+              <LinearGradient colors={['#00B4D8', '#0077B6']} style={styles.logoGradient}>
+                <Sparkles size={40} color="#FFF" strokeWidth={2.5} />
+              </LinearGradient>
+           </Animated.View>
+           
+           <Animated.View entering={FadeInUp.delay(400)} style={styles.headerText}>
+              <Text style={themed.title}>SweetTrack</Text>
+              <Text style={themed.subtitle}>Precision Metabolic Audit</Text>
+           </Animated.View>
         </View>
 
-        <View style={styles.form}>
-          {errorMsg ? <Text style={{ color: 'red', marginBottom: 8 }}>{errorMsg}</Text> : null}
+        <Animated.View entering={FadeInDown.delay(600)} style={styles.formSection}>
+          <View style={styles.languageBox}>
+            <LanguageSelector />
+          </View>
 
-          <View style={styles.inputContainer}>
-            <Mail size={20} color={Colors.textSecondary} style={styles.inputIcon} />
+          {errorMsg ? (
+            <Animated.View entering={FadeInUp} style={styles.errorContainer}>
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </Animated.View>
+          ) : null}
+
+          <View style={themed.inputContainer}>
+            <Mail size={20} color={colors.textSecondary} strokeWidth={2} />
             <TextInput
               style={styles.input}
               placeholder={t.auth.email}
-              placeholderTextColor={Colors.textLight}
+              placeholderTextColor={colors.textSecondary + '80'}
               value={email}
               onChangeText={setEmail}
-              keyboardType="email-address"
               autoCapitalize="none"
-              autoComplete="email"
+              keyboardType="email-address"
             />
           </View>
 
-          <View style={styles.inputContainer}>
-            <Lock size={20} color={Colors.textSecondary} style={styles.inputIcon} />
+          <View style={themed.inputContainer}>
+            <Lock size={20} color={colors.textSecondary} strokeWidth={2} />
             <TextInput
               style={styles.input}
               placeholder={t.auth.password}
-              placeholderTextColor={Colors.textLight}
+              placeholderTextColor={colors.textSecondary + '80'}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              autoComplete="password"
             />
-            <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              style={styles.eyeIcon}
-            >
-              {showPassword ? (
-                <EyeOff size={20} color={Colors.textSecondary} />
-              ) : (
-                <Eye size={20} color={Colors.textSecondary} />
-              )}
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              {showPassword ? <EyeOff size={20} color={colors.textSecondary} /> : <Eye size={20} color={colors.textSecondary} />}
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.loginButton}
+          <TouchableOpacity 
+            activeOpacity={0.8}
+            style={themed.loginBtn}
             onPress={handleLogin}
             disabled={isLoading}
           >
-            <LinearGradient
-              colors={Colors.gradient.primary as any}
-              style={styles.loginButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Text style={styles.loginButtonText}>
-                {isLoading ? t.auth.loggingIn : t.auth.login}
-              </Text>
-            </LinearGradient>
+            <LinearGradient colors={['#00B4D8', '#0077B6']} style={StyleSheet.absoluteFill} start={{x:0, y:0}} end={{x:1, y:0}} />
+            {isLoading ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <View style={styles.loginBtnContent}>
+                <Text style={themed.loginBtnText}>Log in</Text>
+                <ArrowRight size={20} color="#FFF" strokeWidth={3} />
+              </View>
+            )}
           </TouchableOpacity>
 
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>{t.auth.orContinueWith}</Text>
-            <View style={styles.dividerLine} />
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>OR SIGN IN WITH</Text>
+            <View style={styles.divider} />
           </View>
 
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={handleGoogleSignIn}
-            disabled={isLoading}
-          >
-            <Image
-              source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
-              style={styles.googleIcon}
-            />
-            <Text style={styles.googleButtonText}>
-              {isLoading ? t.auth.signingIn : t.auth.googleSignIn}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.socialRow}>
+            <TouchableOpacity 
+              activeOpacity={0.7}
+              style={themed.socialBtn} 
+              onPress={async () => {
+                await signInWithGoogle();
+                router.replace('/(tabs)/home' as any);
+              }}
+            >
+              <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png' }} style={styles.socialIcon} />
+              <Text style={styles.socialBtnText}>Google</Text>
+            </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity
-            style={styles.signupButton}
-            onPress={() => router.push('/signup' as any)}
-          >
-            <Text style={styles.signupButtonText}>{t.auth.createAccount}</Text>
-          </TouchableOpacity>
-        </View>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>{t.auth.noAccount} </Text>
+            <TouchableOpacity onPress={() => router.push('/signup')}>
+              <Text style={[styles.signupText, { color: colors.primary }]}>{t.auth.signup}</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  scrollContent: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 30, paddingVertical: 60 },
-  header: { alignItems: 'center', marginBottom: 40 },
-  logoContainer: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: '#FFF',
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 32,
+    paddingBottom: 40,
+  },
+  topSection: {
     alignItems: 'center',
-    justifyContent: 'center',
+    marginTop: 80,
+    marginBottom: 48,
+  },
+  logoContainer: {
     marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 12,
   },
-  logo: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  logoGradient: {
+    width: 100,
+    height: 100,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#00B4D8',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  title: { fontSize: 34, fontWeight: '800' as const, color: Colors.text, marginBottom: 8, letterSpacing: -0.5 },
-  subtitle: { fontSize: 16, color: Colors.textSecondary, opacity: 0.8 },
-  form: { width: '100%', marginTop: 10 },
-  inputContainer: {
+  headerText: {
+    alignItems: 'center',
+  },
+  formSection: {
+    flex: 1,
+  },
+  languageBox: {
+    alignItems: 'flex-end',
+    marginBottom: 24,
+  },
+  errorContainer: {
+    backgroundColor: '#FEE2E2',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  errorText: {
+    color: '#B91C1C',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  input: {
+    flex: 1,
+    paddingHorizontal: 12,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  loginBtnContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: '#F1F5F9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 2,
+    gap: 12,
   },
-  inputIcon: { marginRight: 12 },
-  input: { flex: 1, paddingVertical: 18, fontSize: 16, color: Colors.text },
-  eyeIcon: { padding: 8 },
-  loginButton: { borderRadius: 16, overflow: 'hidden', marginTop: 12, shadowColor: Colors.gradient.primary[0], shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
-  loginButtonGradient: { paddingVertical: 18, alignItems: 'center', justifyContent: 'center' },
-  loginButtonText: { fontSize: 17, fontWeight: '700' as const, color: Colors.textWhite, letterSpacing: 0.5 },
-  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 28 },
-  dividerLine: { flex: 1, height: 1.5, backgroundColor: '#F1F5F9' },
-  dividerText: { marginHorizontal: 16, fontSize: 14, color: Colors.textSecondary, fontWeight: '500' },
-  googleButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF', borderRadius: 16, borderWidth: 1.5, borderColor: '#F1F5F9', paddingVertical: 16, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  googleIcon: { width: 22, height: 22, marginRight: 12 },
-  googleButtonText: { fontSize: 16, fontWeight: '600' as const, color: Colors.text },
-  signupButton: { paddingVertical: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 2, borderColor: Colors.gradient.primary[0] },
-  signupButtonText: { fontSize: 16, fontWeight: '700' as const, color: Colors.gradient.primary[0] },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 32,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  socialIcon: {
+    width: 24,
+    height: 24,
+  },
+  socialBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 32,
+  },
+  footerText: {
+    color: '#64748B',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  signupText: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
 });

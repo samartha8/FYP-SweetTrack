@@ -202,7 +202,9 @@ export default function HealthHistoryScreen() {
                         <Text style={[styles.dateText, themed.date]}>{formatDate(item.createdAt)}</Text>
                     </View>
                     <View style={styles.headerRight}>
-                        <Text style={[styles.riskScore, { color: riskColor }]}>{item.riskScore}%</Text>
+                        <Text style={[styles.riskScore, { color: riskColor, fontSize: scale(16) }]}>
+                            {item.riskLevel === 'High Risk' ? (t?.home?.riskPositive || "YES") : (t?.home?.riskNegative || "NO")}
+                        </Text>
                         {isExpanded ? <ChevronUp size={20} color={colors.textSecondary} /> : <ChevronDown size={20} color={colors.textSecondary} />}
                     </View>
                 </View>
