@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useUser } from './UserContext';
 import { SETTINGS_URL } from '../constants/Api';
 import BaseColors from '@/constants/colors';
+import { moderateScale, wp, hp } from '@/utils/responsive';
 
 export type Language = 'en' | 'ne' | 'ja';
 
@@ -205,6 +206,9 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     updateNotifications,
     updateAccessibility,
     resetSettings,
+    ms: moderateScale,
+    wp,
+    hp,
   }), [
     settings,
     isLoading,
@@ -217,11 +221,14 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     updateNotifications,
     updateAccessibility,
     resetSettings,
+    moderateScale,
+    wp,
+    hp,
   ]);
 });
 
 // Helper hook for simpler consumption
 export const useTheme = () => {
-  const { colors, scale, settings } = useSettings();
-  return { colors, scale, isHighContrast: settings.highContrast, fontSize: settings.fontSize };
+  const { colors, scale, settings, ms, wp, hp } = useSettings();
+  return { colors, scale, ms, wp, hp, isHighContrast: settings.highContrast, fontSize: settings.fontSize };
 };

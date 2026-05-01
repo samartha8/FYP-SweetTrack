@@ -39,6 +39,8 @@ const Colors = {
 
   risk: {
     low: '#4CAF50',
+
+
     moderate: '#FF9800',
     high: '#F44336',
   },

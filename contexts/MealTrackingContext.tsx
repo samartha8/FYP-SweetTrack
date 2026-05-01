@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Platform } from 'react-native';
 import { useUser } from './UserContext';
+import { DIET_PLANS, DietPlan } from '@/constants/foodData';
 
 export type MealLog = {
   id: string;
@@ -62,7 +63,32 @@ export const fixupImageUrl = (url?: string) => {
 export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [selectedDietPlan, setSelectedDietPlan] = useState<string>('balanced');
+  const [selectedDietPlan, setSelectedDietPlanState] = useState<string>('balanced');
+
+  const setSelectedDietPlan = useCallback(async (planId: string) => {
+    setSelectedDietPlanState(planId);
+    try {
+      await AsyncStorage.setItem('@sweettrack_selected_diet', planId);
+    } catch (e) {
+      console.error('Failed to save diet plan', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    const loadDietPlan = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('@sweettrack_selected_diet');
+        if (stored) setSelectedDietPlanState(stored);
+      } catch (e) {
+        console.error('Failed to load diet plan', e);
+      }
+    };
+    loadDietPlan();
+  }, []);
+
+  const activeDietDetails = useMemo(() => {
+    return DIET_PLANS.find(p => p.id === selectedDietPlan) || DIET_PLANS.find(p => p.id === 'balanced')!;
+  }, [selectedDietPlan]);
   const { user, ensureAccessToken, isLoading: isAuthLoading, syncGoogleFitData } = useUser();
   const lastUserRef = useRef<any>(null);
 
@@ -128,8 +154,8 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
       // Fetch latest from backend if token exists
       let token = await ensureAccessToken?.(isRetry);
       if (token) {
-        if (__DEV__) console.log(`[MealTracking] Fetching from backend: ${API_BASE_URL}/meals`);
-        let res = await fetch(`${API_BASE_URL}/meals`, {
+        if (__DEV__) console.log(`[MealTracking] Fetching from backend: ${API_BASE_URL}`);
+        let res = await fetch(`${API_BASE_URL}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
 
@@ -143,7 +169,7 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
             return; // Stop execution of loadMealLogs
           }
           // If token is successfully refreshed, retry the fetch
-          res = await fetch(`${API_BASE_URL}/meals`, {
+          res = await fetch(`${API_BASE_URL}`, {
             headers: { Authorization: `Bearer ${token}` }
           });
         }
@@ -295,7 +321,7 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
           body = form as any;
         }
 
-        const res = await fetch(`${API_BASE_URL}/meals`, {
+        const res = await fetch(`${API_BASE_URL}`, {
           method: 'POST',
           headers,
           body,
@@ -487,6 +513,22 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
     }
   }, []);
 
+  const getDailyRecap = useCallback(async () => {
+    try {
+      const token = await ensureAccessToken?.();
+      if (!token) return null;
+
+      const res = await fetch(`${API_BASE_URL}/daily-recap`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      return data.success ? data : null;
+    } catch (error) {
+      console.error('Error fetching daily recap:', error);
+      return null;
+    }
+  }, [ensureAccessToken]);
+
   return useMemo(() => ({
     mealLogs,
     isLoading,
@@ -502,6 +544,8 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
     getDailyNutritionForWeek,
     getMealsByType,
     clearAllMealLogs,
+    getDailyRecap,
+    activeDietDetails,
   }), [
     mealLogs,
     isLoading,
@@ -516,6 +560,8 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
     getDailyNutritionForWeek,
     getMealsByType,
     clearAllMealLogs,
+    getDailyRecap,
+    activeDietDetails,
   ]);
 });
 
@@ -542,4 +588,6 @@ type MealTrackingContextType = {
   getDailyNutritionForWeek: DailyNutrition[];
   getMealsByType: (mealType: MealLog['mealType']) => MealLog[];
   clearAllMealLogs: () => Promise<void>;
+  getDailyRecap: () => Promise<any>;
+  activeDietDetails: DietPlan;
 };
