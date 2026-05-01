@@ -3,6 +3,43 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { LogBox } from "react-native";
+
+LogBox.ignoreLogs([
+  '"shadow*" style props are deprecated. Use "boxShadow".',
+  'Warning: useLayoutEffect does nothing on the server',
+  'Image: style.resizeMode is deprecated. Please use props.resizeMode.',
+  'Error: Cannot pipe to a closed or destroyed stream'
+]);
+
+// 🤫 SHUSH THE TERMINAL
+// Suppress the most annoying terminal warnings that LogBox misses
+const ignoredWarnings = [
+  'shadow* style props are deprecated',
+  'useLayoutEffect does nothing on the server',
+  'style.resizeMode is deprecated',
+  'Cannot pipe to a closed'
+];
+
+if (__DEV__) {
+  const originalWarn = console.warn;
+  const originalError = console.error;
+
+  console.warn = (...args) => {
+    if (args.length > 0 && typeof args[0] === 'string' && ignoredWarnings.some(w => args[0].includes(w))) {
+      return;
+    }
+    originalWarn(...args);
+  };
+
+  console.error = (...args) => {
+    if (args.length > 0 && typeof args[0] === 'string' && ignoredWarnings.some(w => args[0].includes(w))) {
+      return;
+    }
+    originalError(...args);
+  };
+}
+
 
 import { UserProvider } from "@/contexts/UserContext";
 import { AdminProvider } from "@/contexts/AdminContext";
