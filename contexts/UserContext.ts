@@ -4,12 +4,13 @@ import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import * as ExpoLinking from 'expo-linking';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Platform } from 'react-native';
+import { Alert, Linking, Platform, AppState, AppStateStatus } from 'react-native';
 import {
   AUTH_URL,
   GOOGLE_FIT_URL,
   API_BASE_URL,
-  HEALTH_URL
+  HEALTH_URL,
+  DIABETES_URL
 } from '../constants/Api';
 
 export type User = {
@@ -36,7 +37,11 @@ export type User = {
   rewardsPoints?: number;
   streak?: number;
   unlockedBadges?: string[];
+  redeemedRewards?: string[];
+  riskStatus?: 'Positive' | 'Negative' | 'Normal';
+  riskProbability?: number;
 };
+
 
 export type HealthMetrics = {
   steps: number;
@@ -69,7 +74,11 @@ const STORAGE_KEYS = {
   REFRESH_TOKEN: '@sweettrack_refresh_token',
   GOOGLE_FIT_CONNECTED: '@sweettrack_google_fit_connected',
   WATER_INTAKE: '@sweettrack_water_intake',
+  RISK_STATUS: '@sweettrack_risk_status',
+  RISK_PROBABILITY: '@sweettrack_risk_probability',
+  LAST_METRICS_DATE: '@sweettrack_last_metrics_date',
 };
+
 
 const EXTERNAL_STORAGE_KEYS = ['@sweettrack_settings', '@sweettrack_meal_logs'];
 
@@ -110,7 +119,11 @@ export const [UserProvider, useUser] = createContextHook(() => {
   const [rewardsPoints, setRewardsPoints] = useState<number>(0);
   const [streak, setStreak] = useState<number>(0);
   const [unlockedBadges, setUnlockedBadges] = useState<string[]>([]);
+  const [redeemedRewards, setRedeemedRewards] = useState<string[]>([]);
   const [isGoogleFitConnected, setIsGoogleFitConnected] = useState<boolean>(false);
+
+  const [riskStatus, setRiskStatus] = useState<'Positive' | 'Negative' | 'Normal'>('Normal');
+  const [riskProbability, setRiskProbability] = useState<number>(0);
   
   // Single-flight refresh coordination
   const refreshPromise = useMemo(() => ({ current: null as Promise<{ success: boolean; token?: string; errorCode?: string; message?: string }> | null }), []);
@@ -153,6 +166,10 @@ export const [UserProvider, useUser] = createContextHook(() => {
     setRewardsPoints(userToSave.rewardsPoints || 0);
     setStreak(userToSave.streak || 0);
     setUnlockedBadges(userToSave.unlockedBadges || []);
+    setRedeemedRewards(userToSave.redeemedRewards || []);
+    setRiskStatus(userToSave.riskStatus || 'Normal');
+    setRiskProbability(userToSave.riskProbability || 0);
+
     // Mark onboarding as completed for authenticated users (they've seen the login screen)
     setHasOnboarded(true);
 
@@ -163,6 +180,8 @@ export const [UserProvider, useUser] = createContextHook(() => {
       [STORAGE_KEYS.REFRESH_TOKEN, refreshToken],
       [STORAGE_KEYS.HAS_ONBOARDED, 'true'], // Mark onboarding as complete
       [STORAGE_KEYS.HAS_HEALTH_SETUP, userToSave.healthSetupCompleted ? 'true' : 'false'], // Store health setup status
+      [STORAGE_KEYS.RISK_STATUS, userToSave.riskStatus || 'Normal'],
+      [STORAGE_KEYS.RISK_PROBABILITY, (userToSave.riskProbability || 0).toString()],
     ]);
 
     if (__DEV__) {
@@ -193,8 +212,10 @@ export const [UserProvider, useUser] = createContextHook(() => {
     setDailyGoals(DEFAULT_DAILY_GOALS);
     setRewardsPoints(0);
     setStreak(0);
+    setRedeemedRewards([]);
     setIsGoogleFitConnected(false);
   }, []); // Empty dependencies - use refs for dynamic values
+
 
   const refreshSession = useCallback(async (refreshTokenOverride?: string) => {
     // If a refresh is already in progress, return the existing promise
@@ -266,6 +287,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
         storedStreak,
         storedGoogleFit,
         storedRefreshToken,
+        storedMetricsDate,
       ] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.USER),
         AsyncStorage.getItem(STORAGE_KEYS.HAS_ONBOARDED),
@@ -276,20 +298,31 @@ export const [UserProvider, useUser] = createContextHook(() => {
         AsyncStorage.getItem(STORAGE_KEYS.STREAK),
         AsyncStorage.getItem(STORAGE_KEYS.GOOGLE_FIT_CONNECTED),
         AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN),
+        AsyncStorage.getItem(STORAGE_KEYS.LAST_METRICS_DATE),
       ]);
 
-      // Default hasOnboarded to false if not found
-      if (storedOnboarded) {
-        setHasOnboarded(JSON.parse(storedOnboarded));
-      } else {
-        setHasOnboarded(false);
+      const todayStr = new Date().toLocaleDateString('sv-SE');
+
+      // Date-based reset: if stored metrics are from yesterday, reset them
+      if (storedMetricsDate !== todayStr) {
+        if (__DEV__) console.log('📅 [UserContext] New day detected. Resetting metrics locally.');
+        setHealthMetrics(DEFAULT_HEALTH_METRICS);
+        await AsyncStorage.multiSet([
+          [STORAGE_KEYS.HEALTH_METRICS, JSON.stringify(DEFAULT_HEALTH_METRICS)],
+          [STORAGE_KEYS.LAST_METRICS_DATE, todayStr],
+        ]);
+      } else if (storedMetrics) {
+        setHealthMetrics(JSON.parse(storedMetrics));
       }
-      if (storedHealthSetup) setHasHealthSetup(JSON.parse(storedHealthSetup));
-      if (storedMetrics) setHealthMetrics(JSON.parse(storedMetrics));
       if (storedGoals) setDailyGoals(JSON.parse(storedGoals));
       if (storedPoints) setRewardsPoints(JSON.parse(storedPoints));
       if (storedStreak) setStreak(JSON.parse(storedStreak));
       if (storedGoogleFit) setIsGoogleFitConnected(JSON.parse(storedGoogleFit));
+      
+      const storedRiskStatus = await AsyncStorage.getItem(STORAGE_KEYS.RISK_STATUS);
+      const storedRiskProb = await AsyncStorage.getItem(STORAGE_KEYS.RISK_PROBABILITY);
+      if (storedRiskStatus) setRiskStatus(storedRiskStatus as any);
+      if (storedRiskProb) setRiskProbability(parseFloat(storedRiskProb));
 
       if (storedRefreshToken) {
         const refreshed = await refreshSession(storedRefreshToken);
@@ -307,8 +340,10 @@ export const [UserProvider, useUser] = createContextHook(() => {
             setHasHealthSetup(parsedUser.healthSetupCompleted || false);
           }
         }
-        // If refresh succeeded, user is already set by persistAuthPayload in refreshSession
+        // Always try to fetch today's latest metrics if we have a session
+        fetchDailyMetrics();
       } else if (storedUser) {
+
         // No refresh token but user exists - might be from before token system
         // Clear everything and require login
         await clearLocalState();
@@ -557,6 +592,8 @@ export const [UserProvider, useUser] = createContextHook(() => {
     }
   }, [clearLocalState]);
 
+
+
   const ensureAccessToken = useCallback(async (forceRefresh = false) => {
     // Helper to check if token is expired
     const isTokenExpired = (token: string) => {
@@ -604,6 +641,38 @@ export const [UserProvider, useUser] = createContextHook(() => {
 
     return currentToken;
   }, [refreshSession]);
+
+  const refreshRiskStatus = useCallback(async () => {
+    try {
+      const token = await ensureAccessToken();
+      if (!token) return;
+
+      const response = await fetch(`${DIABETES_URL}/latest`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      
+      if (data.success && data.riskLevel) {
+        // Map backend riskLevel to expected Positive/Negative
+        const status = data.riskLevel === 'High Risk' ? 'Positive' : 'Negative';
+        const prob = data.probability !== undefined ? data.probability : (data.riskScore ? data.riskScore / 100 : 0);
+        
+        setRiskStatus(status);
+        setRiskProbability(prob);
+        
+        await AsyncStorage.multiSet([
+          [STORAGE_KEYS.RISK_STATUS, status],
+          [STORAGE_KEYS.RISK_PROBABILITY, prob.toString()],
+        ]);
+
+        if (user) {
+          setUser(prev => prev ? { ...prev, riskStatus: status, riskProbability: prob } : null);
+        }
+      }
+    } catch (e) {
+      console.error('Error refreshing risk status:', e);
+    }
+  }, [ensureAccessToken, user?.id]);
 
   // --- REST FUNCTIONS REMAIN UNCHANGED ---
   const completeOnboarding = useCallback(async () => {
@@ -683,13 +752,16 @@ export const [UserProvider, useUser] = createContextHook(() => {
           const highBP = parseFloat(updatedUser.highBP?.toString() || '0');
 
           if (bmi > 0 && age > 0 && genHlth > 0) {
-            // HbA1c
-            const hba1c = 4.5 + (bmi - 25) * 0.03 + (age - 7) * 0.15 + genHlth * 0.4 + highChol * 0.8 + highBP * 0.6;
-            updatedUser.hba1cEstimated = Number(Math.max(3.5, Math.min(15.0, hba1c)).toFixed(2));
+            // ONLY recalculate if the fields were NOT explicitly provided in this update
+            if (updates.hba1cEstimated === undefined) {
+              const hba1c = 4.5 + (bmi - 25) * 0.03 + (age - 7) * 0.15 + genHlth * 0.4 + highChol * 0.8 + highBP * 0.6;
+              updatedUser.hba1cEstimated = Number(Math.max(3.5, Math.min(15.0, hba1c)).toFixed(2));
+            }
             
-            // Glucose
-            const glucose = 85 + (bmi - 25) * 1.2 + (age - 7) * 3.0 + genHlth * 8 + highChol * 15 + highBP * 12;
-            updatedUser.bloodGlucoseEstimated = Number(Math.max(70, Math.min(300, glucose)).toFixed(1));
+            if (updates.bloodGlucoseEstimated === undefined) {
+              const glucose = 85 + (bmi - 25) * 1.2 + (age - 7) * 3.0 + genHlth * 8 + highChol * 15 + highBP * 12;
+              updatedUser.bloodGlucoseEstimated = Number(Math.max(70, Math.min(300, glucose)).toFixed(1));
+            }
           }
         }
 
@@ -782,8 +854,15 @@ export const [UserProvider, useUser] = createContextHook(() => {
     try {
       const response = await fetch(`${API_BASE_URL}/rewards/sync`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          date: new Date().toLocaleDateString('sv-SE')
+        })
       });
+
       
       if (response.status === 401 && retryLimit > 0) {
         token = await ensureAccessToken(true);
@@ -795,8 +874,10 @@ export const [UserProvider, useUser] = createContextHook(() => {
         setRewardsPoints(data.rewardsPoints);
         setStreak(data.streak);
         setUnlockedBadges(data.unlockedBadges);
+        if (data.redeemedRewards) setRedeemedRewards(data.redeemedRewards);
       }
     } catch (e) {
+
       console.error('Failed to sync rewards:', e);
     }
   }, [ensureAccessToken]);
@@ -836,7 +917,36 @@ export const [UserProvider, useUser] = createContextHook(() => {
     return null;
   }, [ensureAccessToken]);
 
+  const redeemReward = useCallback(async (rewardId: string, cost: number) => {
+    try {
+      let token = await ensureAccessToken();
+      if (!token) return { success: false, message: 'Please login first' };
+
+      const response = await fetch(`${API_BASE_URL}/rewards/redeem`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ rewardId, cost })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setRewardsPoints(data.rewardsPoints);
+        setRedeemedRewards(data.redeemedRewards);
+        return { success: true };
+      }
+      return { success: false, message: data.message || 'Failed to redeem reward' };
+    } catch (e) {
+      console.error('Failed to redeem reward:', e);
+      return { success: false, message: 'Network error' };
+    }
+  }, [ensureAccessToken]);
+
   const checkGoalsCompletion = useCallback((metrics: HealthMetrics, goals: DailyGoals) => {
+
     const goalsCompleted =
       metrics.steps >= goals.steps &&
       metrics.water >= goals.water &&
@@ -848,13 +958,61 @@ export const [UserProvider, useUser] = createContextHook(() => {
   }, [addRewardPoints]);
 
   const updateHealthMetrics = useCallback(async (updates: Partial<HealthMetrics>) => {
+    let finalMetrics: HealthMetrics;
+    
     setHealthMetrics(prev => {
-      const updatedMetrics = { ...prev, ...updates };
-      AsyncStorage.setItem(STORAGE_KEYS.HEALTH_METRICS, JSON.stringify(updatedMetrics));
-      checkGoalsCompletion(updatedMetrics, dailyGoals);
-      return updatedMetrics;
+      // Use Math.max merging to ensure non-zero progress is never accidentally overwritten by cloud zeros
+      finalMetrics = {
+        ...prev,
+        ...updates,
+        steps: Math.max(prev.steps, updates.steps ?? 0),
+        water: Math.max(prev.water, updates.water ?? 0),
+        sleep: Math.max(prev.sleep, updates.sleep ?? 0),
+        calories: Math.max(prev.calories, updates.calories ?? 0),
+      };
+      
+      const todayStr = new Date().toLocaleDateString('sv-SE');
+      AsyncStorage.multiSet([
+        [STORAGE_KEYS.HEALTH_METRICS, JSON.stringify(finalMetrics)],
+        [STORAGE_KEYS.LAST_METRICS_DATE, todayStr]
+      ]);
+      checkGoalsCompletion(finalMetrics, dailyGoals);
+      return finalMetrics;
     });
-  }, [dailyGoals, checkGoalsCompletion]);
+
+
+
+    // Fire-and-forget backend sync
+    const syncToServer = async () => {
+      try {
+        const token = await ensureAccessToken();
+        if (!token) return;
+
+        // Map frontend fields (sleep) to backend fields (sleepHours)
+        const mappedUpdates: any = { ...updates };
+        if (updates.sleep !== undefined) {
+          mappedUpdates.sleep = updates.sleep; // wellnessController handles 'sleep' mapping to 'sleepHours'
+        }
+
+        // Add client date for timezone-aware tracking
+        mappedUpdates.date = new Date().toLocaleDateString('sv-SE');
+
+        await fetch(`${API_BASE_URL}/wellness/metrics`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(mappedUpdates)
+        });
+
+      } catch (error) {
+        console.error('Failed to sync health metrics to backend:', error);
+      }
+    };
+
+    syncToServer();
+  }, [dailyGoals, checkGoalsCompletion, ensureAccessToken]);
 
   const updateDailyGoals = useCallback(async (updates: Partial<DailyGoals>) => {
     setDailyGoals(prev => {
@@ -872,6 +1030,56 @@ export const [UserProvider, useUser] = createContextHook(() => {
       console.error('Error resetting daily metrics:', error);
     }
   }, []);
+
+  const fetchDailyMetrics = useCallback(async (retryLimit = 1) => {
+    try {
+      let token = await ensureAccessToken();
+      if (!token) return;
+
+      const dateStr = new Date().toLocaleDateString('sv-SE');
+      const res = await fetch(`${API_BASE_URL}/wellness/metrics?date=${dateStr}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+
+      if (res.status === 401 && retryLimit > 0) {
+        token = await ensureAccessToken(true);
+        if (token) return fetchDailyMetrics(retryLimit - 1);
+      }
+
+      const data = await res.json();
+      if (data.success && data.metrics) {
+        const remoteMetrics: HealthMetrics = {
+          steps: data.metrics.steps || 0,
+          water: data.metrics.water || 0,
+          sleep: data.metrics.sleep || 0, // Backend now returns 'sleep' (mapped from sleepHours)
+          calories: data.metrics.calories || 0,
+          caloriesConsumed: data.metrics.caloriesConsumed || 0,
+          heartRateAvg: data.metrics.heartRateAvg || null,
+          bloodGlucose: data.metrics.bloodGlucose || null,
+          bloodPressure: data.metrics.bloodPressure || null,
+        };
+
+        setHealthMetrics(prev => {
+          // Use Math.max merge strategy: never overwrite progress with a smaller value from the server
+          const merged: HealthMetrics = {
+            ...prev,
+            ...remoteMetrics,
+            steps: Math.max(prev.steps, remoteMetrics.steps),
+            water: Math.max(prev.water, remoteMetrics.water),
+            sleep: Math.max(prev.sleep, remoteMetrics.sleep),
+            calories: Math.max(prev.calories, remoteMetrics.calories),
+          };
+          AsyncStorage.setItem(STORAGE_KEYS.HEALTH_METRICS, JSON.stringify(merged));
+          return merged;
+        });
+
+      }
+    } catch (error) {
+      console.error('Error fetching today\'s metrics:', error);
+    }
+  }, [ensureAccessToken]);
+
 
   const setWater = useCallback(async (glasses: number) => {
     setHealthMetrics(prev => {
@@ -1061,8 +1269,12 @@ export const [UserProvider, useUser] = createContextHook(() => {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        }
+        },
+        body: JSON.stringify({
+          date: new Date().toLocaleDateString('sv-SE')
+        })
       });
+
 
       const data = await res.json();
 
@@ -1072,11 +1284,12 @@ export const [UserProvider, useUser] = createContextHook(() => {
           steps: data.data.steps || 0,
           calories: data.data.calories || 0,
           caloriesConsumed: data.data.caloriesConsumed || 0,
-          sleep: data.data.sleep || 0,
+          sleep: data.data.sleep || 0, // googleFitController returns 'sleep' correctly
           heartRateAvg: data.data.heartRateAvg || null,
           bloodGlucose: data.data.bloodGlucose || null,
           bloodPressure: data.data.bloodPressure || null,
         });
+
         return { success: true, data: data.data };
       }
 
@@ -1094,6 +1307,32 @@ export const [UserProvider, useUser] = createContextHook(() => {
       return { success: false, message: 'Unable to sync Google Fit data' };
     }
   }, [ensureAccessToken, updateHealthMetrics, clearLocalState, isGoogleFitConnected]);
+  
+  // Handle AppState changes (refresh user data when app comes to foreground)
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        if (__DEV__) console.log('📱 [UserContext] App returned to foreground - refreshing session...');
+        // Only refresh if we have a user (prevents refresh on splash/login)
+        if (userIdRef.current) {
+           await refreshSession();
+           // If we are connected, also try to fetch latest metrics
+           if (isGoogleFitConnected) {
+             fetchDailyMetrics();
+           }
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [refreshSession, isGoogleFitConnected, fetchDailyMetrics]);
+
+
+
 
   // Handle OAuth callbacks and Google Fit deep links
   useEffect(() => {
@@ -1242,7 +1481,7 @@ export const [UserProvider, useUser] = createContextHook(() => {
     return () => {
       subscription.remove();
     };
-  }, [user, syncGoogleFitData, persistAuthPayload]);
+  }, [user, syncGoogleFitData, persistAuthPayload, refreshRiskStatus]);
 
   return useMemo(() => ({
     user,
@@ -1254,7 +1493,11 @@ export const [UserProvider, useUser] = createContextHook(() => {
     rewardsPoints,
     streak,
     unlockedBadges,
+    redeemedRewards,
     isGoogleFitConnected,
+    riskStatus,
+    riskProbability,
+    refreshRiskStatus,
     setWater,
     registerPushNotifications,
     completeOnboarding,
@@ -1269,11 +1512,13 @@ export const [UserProvider, useUser] = createContextHook(() => {
     updateDailyGoals,
     addRewardPoints,
     syncRewards,
+    redeemReward,
     resetDailyMetrics,
     connectGoogleFit,
     disconnectGoogleFit,
     syncGoogleFitData,
     ensureAccessToken,
+    fetchDailyMetrics,
   }), [
     user,
     hasOnboarded,
@@ -1284,7 +1529,11 @@ export const [UserProvider, useUser] = createContextHook(() => {
     rewardsPoints,
     streak,
     unlockedBadges,
+    redeemedRewards,
     isGoogleFitConnected,
+    riskStatus,
+    riskProbability,
+    refreshRiskStatus,
     setWater,
     registerPushNotifications,
     completeOnboarding,
@@ -1299,10 +1548,13 @@ export const [UserProvider, useUser] = createContextHook(() => {
     updateDailyGoals,
     addRewardPoints,
     syncRewards,
+    redeemReward,
     resetDailyMetrics,
     connectGoogleFit,
     disconnectGoogleFit,
     syncGoogleFitData,
     ensureAccessToken,
+    fetchDailyMetrics,
   ]);
+
 });
