@@ -5,7 +5,8 @@
 
 export type FoodSwap = {
   riskyItem: string;
-  category: 'Carbs' | 'Sugar' | 'Snacks' | 'Drinks';
+  category?: 'Carbs' | 'Sugar' | 'Snacks' | 'Drinks';
+  reason?: string;
   alternatives: {
     name: string;
     benefit: string;
