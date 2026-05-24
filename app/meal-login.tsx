@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { secureFetch } from '@/lib/apiClient';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useIsomorphicLayoutEffect } from '../hooks/useIsomorphicLayoutEffect';
 import {
   View,
@@ -29,7 +30,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { X, Camera, Image as ImageIcon, Flame, Wheat, Beef, Droplets, Info, Candy, Waves, Croissant, Pizza, CheckCircle, Plus, Minus, Trash2, AlertTriangle, Zap, ArrowRight, ShieldAlert, ShieldCheck, Scale, ChevronRight, Utensils } from 'lucide-react-native';
+import { X, Camera, Image as ImageIcon, Flame, Wheat, Beef, Droplets, Info, Candy, Waves, Croissant, Pizza, CheckCircle, Plus, Minus, Trash2, AlertTriangle, Zap, ArrowRight, ShieldAlert, ShieldCheck, Scale, ChevronRight, Utensils, UtensilsCrossed, ChevronDown, ChevronUp, Check, Sparkles } from 'lucide-react-native';
 import { getSwapForFood, FoodSwap } from '@/constants/foodSwaps';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from '@/hooks/use-translation';
@@ -37,7 +38,8 @@ import { generateObject } from '@/lib/rork-toolkit-mock';
 import { z } from 'zod';
 import { useMealTracking } from '@/contexts/MealTrackingContext';
 import { useTheme } from '@/contexts/SettingsContext';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useHealth } from '@/contexts/HealthContext';
 import { moderateScale as ms, wp, hp, fontSize } from '@/utils/responsive';
 // Fallback for StyleSheet scope
 const scale = fontSize;
@@ -135,7 +137,8 @@ export default function MealLogScreen() {
   const router = useRouter();
   const { addMealLog, activeDietDetails } = useMealTracking();
   const { colors, scale, ms, wp, hp } = useTheme();
-  const { ensureAccessToken, riskStatus } = useUser();
+  const { ensureAccessToken } = useAuth();
+  const { riskStatus, syncRewards, awardPoints } = useHealth();
   const { t } = useTranslation();
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -146,6 +149,7 @@ export default function MealLogScreen() {
   const [allFoodClasses, setAllFoodClasses] = useState<{id: string, name: string}[]>([]);
   const [logMode, setLogMode] = useState<'scan' | 'manual'>('scan'); // 🛠️ New: Dual mode
   const [manualDescription, setManualDescription] = useState(''); // 🛠️ New: Text entry
+  const [textSuggestions, setTextSuggestions] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -156,6 +160,8 @@ export default function MealLogScreen() {
   const [isAddingNewItem, setIsAddingNewItem] = useState(false);
   const [blockedFoodInfo, setBlockedFoodInfo] = useState<FoodSwap | null>(null);
   const [hasRestrictedFood, setHasRestrictedFood] = useState(false);
+  const [isPortionModalVisible, setIsPortionModalVisible] = useState(false);
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
 
   // 🛡️ Reusable Clinical Guard Logic
   useEffect(() => {
@@ -215,7 +221,7 @@ export default function MealLogScreen() {
     mealTypeButtonTextActive: { color: colors.primary },
     analyzeButton: { backgroundColor: colors.primary },
     analyzeButtonText: { color: colors.textWhite, fontSize: scale(16) },
-    sectionTitle: { color: colors.text, fontSize: scale(18) },
+    sectionTitle: { color: colors.text, fontSize: scale(19), fontWeight: '800', letterSpacing: -0.5 },
     card: { backgroundColor: colors.card, shadowColor: colors.cardShadow },
     foodItem: { borderBottomColor: colors.backgroundSecondary },
     foodItemDot: { backgroundColor: colors.primary },
@@ -260,7 +266,7 @@ export default function MealLogScreen() {
     searchInput: { backgroundColor: colors.card, borderColor: colors.border, color: colors.text },
     foodClassItem: { borderBottomColor: colors.border },
     foodClassText: { color: colors.text },
-  }), [colors, scale]);
+  }), [colors, scale, ms, hp, wp]);
 
   const analysisMutation = useMutation({
     mutationFn: async (imageUri: string) => {
@@ -273,7 +279,8 @@ export default function MealLogScreen() {
 
       if (Platform.OS === 'web') {
         // On web, we need to fetch the URI and convert to a blob
-        const response = await fetch(imageUri);
+        // Use global window.fetch explicitly to avoid any confusion with local aliases
+        const response = await window.fetch(imageUri);
         const blob = await response.blob();
         formData.append('image', blob, filename);
       } else {
@@ -289,10 +296,11 @@ export default function MealLogScreen() {
       const token = await ensureAccessToken();
       if (!token) throw new Error('Authentication required');
 
-      const response = await fetch(`${MEAL_URL}/analyze`, {
+      const response = await secureFetch(`${MEAL_URL}/analyze`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
           'Authorization': `Bearer ${token}`,
         },
         body: formData,
@@ -335,7 +343,9 @@ export default function MealLogScreen() {
         foodItems: data.foodItems.map((item: any) => ({
           ...item,
           count: item.count || 1,
-          perItemNutrition: item.perItemNutrition
+          perItemNutrition: item.perItemNutrition,
+          portionSize: 'Standard',
+          scalar: 1.0,
         })),
         nutritionalInfo: data.nutritionalInfo,
         servingSize: data.servingSize,
@@ -343,6 +353,8 @@ export default function MealLogScreen() {
         imageUrl: data.imageUrl,
         suitability: data.suitability,
       });
+      setIsNutritionVisible(true);
+      setIsPortionModalVisible(false);
     },
     onError: (error) => {
       stopScan();
@@ -356,10 +368,12 @@ export default function MealLogScreen() {
   const analyzeTextMutation = useMutation({
     mutationFn: async (text: string) => {
       const token = await ensureAccessToken?.();
-      const res = await fetch(`${MEAL_URL}/analyze-text`, {
+      const res = await secureFetch(`${MEAL_URL}/analyze-text`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ text }),
@@ -368,12 +382,19 @@ export default function MealLogScreen() {
       if (!res.ok) throw new Error(data.message || 'Failed to analyze text');
       return data as NutritionalInfo;
     },
-    onSuccess: (data) => {
-      setNutritionalData({
-        ...data,
-        healthTips: data.healthTips || [],
-      });
-      setAnalysisError(null);
+    onSuccess: (data: any) => {
+      if (data.needsClarification) {
+        setTextSuggestions(data.suggestions || []);
+        setAnalysisError(data.message);
+        setNutritionalData(null);
+      } else {
+        setTextSuggestions([]);
+        setNutritionalData({
+          ...data,
+          healthTips: data.healthTips || [],
+        });
+        setAnalysisError(null);
+      }
     },
     onError: (error: any) => {
       setAnalysisError(error.message);
@@ -530,6 +551,10 @@ export default function MealLogScreen() {
         mealType: selectedMealType,
       });
 
+      // ⚡ Update streak and rewards instantly after positive action
+      syncRewards();
+      awardPoints('LOG_MEAL');
+
       // ⚡ Instantly show success and navigate back
       setShowSuccess(true);
       setTimeout(() => {
@@ -545,8 +570,12 @@ export default function MealLogScreen() {
   const fetchFoodClasses = async () => {
     try {
       const token = await ensureAccessToken();
-      const response = await fetch(`${MEAL_URL}/food-classes`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const response = await secureFetch(`${MEAL_URL}/food-classes`, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       const data = await response.json();
       if (data.success) {
@@ -557,12 +586,20 @@ export default function MealLogScreen() {
     }
   };
 
-  const openCorrectionModal = (isNew: boolean = false) => {
+  const openCorrectionModal = (indexOrIsNew: number | null | boolean = null) => {
     if (allFoodClasses.length === 0) {
       fetchFoodClasses();
     }
     setSearchQuery('');
-    setIsAddingNewItem(isNew);
+    
+    if (typeof indexOrIsNew === 'number') {
+      setEditingItemIndex(indexOrIsNew);
+      setIsAddingNewItem(false);
+    } else {
+      setEditingItemIndex(null);
+      setIsAddingNewItem(true);
+    }
+    
     setIsCorrectionModalVisible(true);
   };
 
@@ -738,8 +775,12 @@ export default function MealLogScreen() {
     try {
       setIsCorrectionModalVisible(false);
       const token = await ensureAccessToken();
-      const response = await fetch(`${MEAL_URL}/nutrition-lookup?name=${encodeURIComponent(foodId)}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const response = await secureFetch(`${MEAL_URL}/nutrition-lookup?name=${encodeURIComponent(foodId)}`, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       const data = await response.json();
 
@@ -762,21 +803,25 @@ export default function MealLogScreen() {
         const currentItems = nutritionalData?.foodItems || [];
         let updatedItems;
 
-        if (isAddingNewItem) {
+        if (editingItemIndex !== null) {
+          // Replace specific item
+          updatedItems = [...currentItems];
+          updatedItems[editingItemIndex] = newItem;
+          setEditingItemIndex(null);
+        } else if (isAddingNewItem) {
           updatedItems = [...currentItems, newItem];
         } else {
-          // If we had the modal open but weren't "adding", 
-          // we should technically replace? For now let's just add 
-          // since the user wants to add missing items.
           updatedItems = [...currentItems, newItem];
         }
 
         setIsNutritionVisible(false);
+        const isMomo = data.name.toLowerCase().includes('momo') || data.name.toLowerCase().includes('dumpling');
+        
         setNutritionalData({
           foodItems: updatedItems,
           nutritionalInfo: recalculateTotals(updatedItems),
           servingSize: "1 Standard Serving (100g approx)",
-          healthTips: ["Modified manually by user."],
+          healthTips: isMomo ? ["⚠️ Note: The nutrition shown is for 1 SINGLE PIECE. A standard plate contains 10 pieces. Please adjust the quantity above if you ate a plate!"] : ["Modified manually by user."],
           imageUrl: analysisImageUrl || nutritionalData?.imageUrl || undefined,
           suitability: data.suitability,
         });
@@ -805,7 +850,7 @@ export default function MealLogScreen() {
 
   return (
     <LinearGradient
-      colors={['#F0FDF4', '#F0F9FF']} // Soft Green to Soft Blue/Teal (Premium Background)
+      colors={['#FFFFFF', '#F8FAFC', '#F1F5F9']} // Premium Studio Background (Clean & Modern)
       style={[styles.container, { paddingTop: insets.top }]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
@@ -822,7 +867,7 @@ export default function MealLogScreen() {
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 60, paddingHorizontal: 20 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.imageSection}>
@@ -857,6 +902,7 @@ export default function MealLogScreen() {
                     setNutritionalData(null);
                     setAnalysisError(null);
                     setManualDescription('');
+                    setTextSuggestions([]);
                     setLogMode('scan');
                   };
                   resetLog();
@@ -946,6 +992,26 @@ export default function MealLogScreen() {
                         </>
                       )}
                     </TouchableOpacity>
+
+                    {textSuggestions.length > 0 && (
+                      <View style={{ marginTop: 20 }}>
+                        <Text style={[styles.scanSubtitle, { color: colors.textSecondary, marginBottom: 12, textAlign: 'left' }]}>Did you mean one of these?</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                          {textSuggestions.map((suggestion) => (
+                            <TouchableOpacity
+                              key={suggestion}
+                              style={{ backgroundColor: colors.primary + '15', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: colors.primary + '40' }}
+                              onPress={() => {
+                                setManualDescription(suggestion);
+                                analyzeTextMutation.mutate(suggestion);
+                              }}
+                            >
+                              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 14 }}>{suggestion}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    )}
                   </View>
                 )}
               </View>
@@ -1051,7 +1117,7 @@ export default function MealLogScreen() {
           <>
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, themed.sectionTitle]}>Detected Items</Text>
+                <Text style={[styles.sectionTitle, { color: colors.text, fontSize: scale(19) }]}>Detected Items</Text>
                 <TouchableOpacity onPress={() => openCorrectionModal()}>
                   <Text style={[styles.correctionLink, { color: colors.primary }]}>Not correct?</Text>
                 </TouchableOpacity>
@@ -1147,88 +1213,90 @@ export default function MealLogScreen() {
             {isNutritionVisible && (
               <Animated.View entering={FadeInUp.duration(500)}>
                 <View style={[styles.sectionHeader, { marginBottom: 16 }]}>
-                  <Text style={[styles.sectionTitle, themed.sectionTitle]}>Nutritional Analysis</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.text, fontSize: scale(19) }]}>Nutritional Analysis</Text>
                   <View style={[styles.proBadge, { backgroundColor: colors.primary + '15' }]}>
                     <Text style={[styles.proBadgeText, { color: colors.primary }]}>AI VERIFIED</Text>
                   </View>
                 </View>
 
-                <View style={styles.nutritionGrid}>
-                  <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: colors.warning }]}>
-                    <LinearGradient colors={[colors.warning + '15', colors.warning + '05']} style={StyleSheet.absoluteFill} />
-                    <View style={[styles.nutritionIcon, { backgroundColor: colors.warning + '20' }]}>
-                      <Flame size={20} color={colors.warning} strokeWidth={2.5} />
+                <View style={{ marginBottom: 20 }}>
+                  <View style={styles.nutritionGrid}>
+                    <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: colors.warning }]}>
+                      <LinearGradient colors={[colors.warning + '15', colors.warning + '05']} style={StyleSheet.absoluteFill} />
+                      <View style={[styles.nutritionIcon, { backgroundColor: colors.warning + '20' }]}>
+                        <Flame size={20} color={colors.warning} strokeWidth={2.5} />
+                      </View>
+                      <View>
+                        <Text style={[styles.nutritionValue, themed.nutritionValue, { color: colors.warning }]}>
+                          {Math.round(nutritionalData.nutritionalInfo.calories || 0)}
+                        </Text>
+                        <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Calories</Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={[styles.nutritionValue, themed.nutritionValue, { color: colors.warning }]}>
-                        {Math.round(nutritionalData.nutritionalInfo.calories || 0)}
-                      </Text>
-                      <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Calories</Text>
-                    </View>
-                  </View>
 
-                  <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#34C759' }]}>
-                    <LinearGradient colors={['#34C75915', '#34C75905']} style={StyleSheet.absoluteFill} />
-                    <View style={[styles.nutritionIcon, { backgroundColor: '#34C75920' }]}>
-                      <Croissant size={20} color="#34C759" strokeWidth={2.5} />
+                    <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#34C759' }]}>
+                      <LinearGradient colors={['#34C75915', '#34C75905']} style={StyleSheet.absoluteFill} />
+                      <View style={[styles.nutritionIcon, { backgroundColor: '#34C75920' }]}>
+                        <Croissant size={20} color="#34C759" strokeWidth={2.5} />
+                      </View>
+                      <View>
+                        <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#34C759' }]}>
+                          {Number(nutritionalData.nutritionalInfo.carbs || 0).toFixed(1)}g
+                        </Text>
+                        <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Carbs</Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#34C759' }]}>
-                        {Number(nutritionalData.nutritionalInfo.carbs || 0).toFixed(1)}g
-                      </Text>
-                      <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Carbs</Text>
-                    </View>
-                  </View>
 
-                  <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#FF3B30' }]}>
-                    <LinearGradient colors={['#FF3B3015', '#FF3B3005']} style={StyleSheet.absoluteFill} />
-                    <View style={[styles.nutritionIcon, { backgroundColor: '#FF3B3020' }]}>
-                      <Beef size={20} color="#FF3B30" strokeWidth={2.5} />
+                    <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#FF3B30' }]}>
+                      <LinearGradient colors={['#FF3B3015', '#FF3B3005']} style={StyleSheet.absoluteFill} />
+                      <View style={[styles.nutritionIcon, { backgroundColor: '#FF3B3020' }]}>
+                        <Beef size={20} color="#FF3B30" strokeWidth={2.5} />
+                      </View>
+                      <View>
+                        <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#FF3B30' }]}>
+                          {Number(nutritionalData.nutritionalInfo.protein || 0).toFixed(1)}g
+                        </Text>
+                        <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Protein</Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#FF3B30' }]}>
-                        {Number(nutritionalData.nutritionalInfo.protein || 0).toFixed(1)}g
-                      </Text>
-                      <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Protein</Text>
-                    </View>
-                  </View>
 
-                  <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#FF9500' }]}>
-                    <LinearGradient colors={['#FF950015', '#FF950005']} style={StyleSheet.absoluteFill} />
-                    <View style={[styles.nutritionIcon, { backgroundColor: '#FF950020' }]}>
-                      <Pizza size={20} color="#FF9500" strokeWidth={2.5} />
+                    <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#FF9500' }]}>
+                      <LinearGradient colors={['#FF950015', '#FF950005']} style={StyleSheet.absoluteFill} />
+                      <View style={[styles.nutritionIcon, { backgroundColor: '#FF950020' }]}>
+                        <Pizza size={20} color="#FF9500" strokeWidth={2.5} />
+                      </View>
+                      <View>
+                        <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#FF9500' }]}>
+                          {Number(nutritionalData.nutritionalInfo.fat || 0).toFixed(1)}g
+                        </Text>
+                        <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Fat</Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#FF9500' }]}>
-                        {Number(nutritionalData.nutritionalInfo.fat || 0).toFixed(1)}g
-                      </Text>
-                      <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Fat</Text>
-                    </View>
-                  </View>
 
-                  <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#FF2D55', borderBottomWidth: 2, borderBottomColor: '#FF2D55' }]}>
-                    <LinearGradient colors={['#FF2D5515', '#FF2D5505']} style={StyleSheet.absoluteFill} />
-                    <View style={[styles.nutritionIcon, { backgroundColor: '#FF2D5520' }]}>
-                      <Candy size={20} color="#FF2D55" strokeWidth={2.5} />
+                    <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#FF2D55' }]}>
+                      <LinearGradient colors={['#FF2D5515', '#FF2D5505']} style={StyleSheet.absoluteFill} />
+                      <View style={[styles.nutritionIcon, { backgroundColor: '#FF2D5520' }]}>
+                        <Candy size={20} color="#FF2D55" strokeWidth={2.5} />
+                      </View>
+                      <View>
+                        <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#FF2D55' }]}>
+                          {Number(nutritionalData.nutritionalInfo.sugar || 0).toFixed(1)}g
+                        </Text>
+                        <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Sugar</Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#FF2D55' }]}>
-                        {Number(nutritionalData.nutritionalInfo.sugar || 0).toFixed(1)}g
-                      </Text>
-                      <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Sugar</Text>
-                    </View>
-                  </View>
 
-                  <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#007AFF', borderColor: '#007AFF15' }]}>
-                    <LinearGradient colors={['#007AFF12', '#007AFF05']} style={StyleSheet.absoluteFill} />
-                    <View style={[styles.nutritionIcon, { backgroundColor: '#007AFF15' }]}>
-                      <Waves size={20} color="#007AFF" strokeWidth={2.5} />
-                    </View>
-                    <View>
-                      <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#007AFF' }]}>
-                        {Math.round(nutritionalData.nutritionalInfo.sodium || 0)}mg
-                      </Text>
-                      <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Sodium</Text>
+                    <View style={[styles.nutritionCard, themed.nutritionCard, { shadowColor: '#007AFF' }]}>
+                      <LinearGradient colors={['#007AFF12', '#007AFF05']} style={StyleSheet.absoluteFill} />
+                      <View style={[styles.nutritionIcon, { backgroundColor: '#007AFF15' }]}>
+                        <Waves size={20} color="#007AFF" strokeWidth={2.5} />
+                      </View>
+                      <View>
+                        <Text style={[styles.nutritionValue, themed.nutritionValue, { color: '#007AFF' }]}>
+                          {Math.round(nutritionalData.nutritionalInfo.sodium || 0)}mg
+                        </Text>
+                        <Text style={[styles.nutritionLabel, themed.nutritionLabel]}>Sodium</Text>
+                      </View>
                     </View>
                   </View>
                 </View>
@@ -1247,18 +1315,29 @@ export default function MealLogScreen() {
 
                 {nutritionalData.suitability && (
                   <View style={styles.section}>
-                    <View style={styles.clinicalHeaderRow}>
-                      <Text style={styles.clinicalSectionTitle}>Diabetes-Aware Score</Text>
-                        <View style={[styles.suitabilityBadge, { 
-                          backgroundColor: hasRestrictedFood ? colors.error + '15' : (nutritionalData?.suitability?.color || colors.primary) + '15', 
-                          borderColor: hasRestrictedFood ? colors.error : (nutritionalData?.suitability?.color || colors.primary) 
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Diabetes-Aware Score</Text>
+                      <View style={[styles.suitabilityBadge, { 
+                        backgroundColor: hasRestrictedFood ? colors.error + '10' : (nutritionalData?.suitability?.color || colors.primary) + '10', 
+                        borderColor: hasRestrictedFood ? colors.error + '40' : (nutritionalData?.suitability?.color || colors.primary) + '40',
+                        paddingVertical: 4,
+                        paddingHorizontal: 10
+                      }]}>
+                        <View style={[styles.suitabilityPulse, { 
+                          backgroundColor: hasRestrictedFood ? colors.error : (nutritionalData?.suitability?.color || colors.primary),
+                          width: 6,
+                          height: 6,
+                          borderRadius: 3
+                        }]} />
+                        <Text style={[styles.suitabilityBadgeText, { 
+                          color: hasRestrictedFood ? colors.error : (nutritionalData?.suitability?.color || colors.primary),
+                          fontSize: 11,
+                          fontWeight: '900'
                         }]}>
-                          <View style={[styles.suitabilityPulse, { backgroundColor: hasRestrictedFood ? colors.error : (nutritionalData?.suitability?.color || colors.primary) }]} />
-                          <Text style={[styles.suitabilityBadgeText, { color: hasRestrictedFood ? colors.error : (nutritionalData?.suitability?.color || colors.primary) }]}>
-                            {hasRestrictedFood ? 'Hazard' : (nutritionalData?.suitability?.rating === 'suitabilityHazard' ? 'Hazard' : nutritionalData?.suitability?.rating === 'suitabilityWarning' ? 'Caution' : 'Recommended')}
-                          </Text>
-                        </View>
-                  </View>
+                          {hasRestrictedFood ? 'Hazard' : (nutritionalData?.suitability?.rating === 'suitabilityHazard' ? 'Hazard' : nutritionalData?.suitability?.rating === 'suitabilityWarning' ? 'Caution' : 'Optimal')}
+                        </Text>
+                      </View>
+                    </View>
 
                   <View style={[styles.suitabilityCard, { backgroundColor: colors.card }]}>
                     <View style={[styles.suitabilityIndicator, { backgroundColor: hasRestrictedFood ? colors.error : (nutritionalData?.suitability?.color || colors.primary) }]} />
@@ -1311,20 +1390,20 @@ export default function MealLogScreen() {
                   </View>
                 )}
 
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Wellness Insights</Text>
-                  <View style={[styles.insightCard, { backgroundColor: colors.primary + '08', borderLeftColor: colors.primary }]}>
+                <View style={{ marginTop: 32 }}>
+                  <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Wellness Insights</Text>
+                  <View style={[styles.insightCard, { backgroundColor: colors.primary + '08', borderLeftWidth: 4, borderLeftColor: colors.primary, paddingHorizontal: 16, paddingVertical: 14 }]}>
                     {nutritionalData.healthTips && nutritionalData.healthTips.length > 0 ? (
                       nutritionalData.healthTips.map((tip, index) => (
-                        <View key={index} style={styles.insightRow}>
-                          <CheckCircle size={14} color={colors.primary} style={{ marginTop: 2 }} />
-                          <Text style={[styles.insightText, { color: colors.textSecondary }]}>{tip}</Text>
+                        <View key={index} style={[styles.insightRow, { marginBottom: index === nutritionalData.healthTips.length - 1 ? 0 : 10 }]}>
+                          <CheckCircle size={16} color={colors.primary} style={{ marginTop: 2 }} />
+                          <Text style={[styles.insightText, { color: colors.textSecondary, fontSize: 14, lineHeight: 20 }]}>{tip}</Text>
                         </View>
                       ))
                     ) : (
                       <View style={styles.insightRow}>
-                        <Info size={14} color={colors.primary} />
-                        <Text style={[styles.insightText, { color: colors.textSecondary }]}>Metabolic balance seems steady.</Text>
+                        <Info size={16} color={colors.primary} style={{ marginTop: 2 }} />
+                        <Text style={[styles.insightText, { color: colors.textSecondary, fontSize: 14 }]}>Metabolic balance seems steady.</Text>
                       </View>
                     )}
                   </View>
@@ -1332,28 +1411,106 @@ export default function MealLogScreen() {
 
                 {nutritionalData?.suitability?.rating === 'suitabilityHazard' || hasRestrictedFood ? (
                   <TouchableOpacity 
+                    activeOpacity={0.9}
                     onPress={() => {
-                      if (hasRestrictedFood) {
-                        // Trigger the same logic as saveMealLog to show the block modal
-                        saveMealLog();
+                      const riskyItem = nutritionalData?.foodItems.find(f => 
+                        (f as any).perItemNutrition?.sugar > 10 || (f as any).perItemNutrition?.carbs > 40
+                      );
+                      const riskyName = riskyItem?.name || 'Multiple Items';
+                      
+                      // 🧠 Dynamic Clinical Swap Engine
+                      let dynamicAlts = [
+                        { name: 'Cauliflower Rice', benefit: '90% fewer carbs', macroImpact: '↓ 35g Carbs' },
+                        { name: 'Leafy Greens Base', benefit: 'Zero glycemic load', macroImpact: '↓ 100% Sugar' }
+                      ];
+
+                      const nameLower = riskyName.toLowerCase();
+                      if (nameLower.includes('cake') || nameLower.includes('baklava') || nameLower.includes('donut')) {
+                        dynamicAlts = [
+                          { name: 'Greek Yogurt & Berries', benefit: 'Natural sweetness + protein', macroImpact: '↓ 25g Sugar' },
+                          { name: 'Stevia-Sweetened Tea', benefit: 'Zero sugar cravings', macroImpact: '↓ 100% Sugar' }
+                        ];
+                      } else if (nameLower.includes('pizza') || nameLower.includes('burger') || nameLower.includes('fries')) {
+                        dynamicAlts = [
+                          { name: 'Zucchini Noodles', benefit: 'Low calorie & carb', macroImpact: '↓ 45g Carbs' },
+                          { name: 'Grilled Protein Wrap', benefit: 'Stable blood glucose', macroImpact: '↓ 30g Carbs' }
+                        ];
                       }
+
+                      setBlockedFoodInfo({
+                        riskyItem: riskyName.charAt(0).toUpperCase() + riskyName.slice(1),
+                        reason: hasRestrictedFood ? 'Clinical Restriction' : 'Glycemic Impact',
+                        alternatives: dynamicAlts
+                      });
                     }}
-                    style={[styles.saveButton, { backgroundColor: colors.card, borderColor: colors.error + '25', borderWidth: 1.5, height: 'auto', paddingVertical: 24, marginTop: 24, borderRadius: 24 }]}
+                    style={{ 
+                      marginTop: 32, 
+                      backgroundColor: colors.card, 
+                      borderRadius: 24,
+                      borderWidth: 1.5,
+                      borderColor: colors.error + '20',
+                      overflow: 'hidden',
+                      ...Platform.select({
+                        web: { boxShadow: '0px 10px 25px rgba(239, 68, 68, 0.12)' },
+                        native: { elevation: 8, shadowColor: colors.error, shadowOpacity: 0.1, shadowRadius: 15 }
+                      })
+                    }}
                   >
                     <LinearGradient 
-                      colors={[colors.error + '08', colors.error + '02']} 
+                      colors={[colors.error + '10', colors.error + '02']} 
                       style={StyleSheet.absoluteFill} 
                     />
-                    <View style={{ flexDirection: 'column', alignItems: 'center', gap: 12, paddingHorizontal: 20 }}>
-                      <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.error + '12', justifyContent: 'center', alignItems: 'center' }}>
-                        <ShieldAlert size={28} color={colors.error} strokeWidth={2.5} />
+                    <View style={{ padding: 24, alignItems: 'center' }}>
+                      <View style={{ 
+                        width: 56, 
+                        height: 56, 
+                        borderRadius: 28, 
+                        backgroundColor: colors.error + '15', 
+                        justifyContent: 'center', 
+                        alignItems: 'center',
+                        marginBottom: 16
+                      }}>
+                        <ShieldAlert size={32} color={colors.error} strokeWidth={2.5} />
                       </View>
-                      <View style={{ alignItems: 'center' }}>
-                        <Text style={[styles.saveButtonText, { color: colors.error, fontSize: 19, marginBottom: 4 }]}>{hasRestrictedFood ? 'Dietary Restriction Active' : 'High Metabolic Risk'}</Text>
-                        <Text style={{ fontSize: 14, color: colors.textSecondary, fontWeight: '600', textAlign: 'center', lineHeight: 20 }}>
-                          {hasRestrictedFood ? 'Logging disabled: This meal contains items strictly avoided on your active diet plan.' : 'Intake blocked: This meal contains excessive sugar/carbs for your safe threshold.'}
+                      
+                      <Text style={{ 
+                        color: colors.error, 
+                        fontSize: 20, 
+                        fontWeight: '900', 
+                        textAlign: 'center',
+                        marginBottom: 8,
+                        letterSpacing: -0.5
+                      }}>
+                        {hasRestrictedFood ? 'Dietary Restriction Active' : 'High Metabolic Hazard'}
+                      </Text>
+                      
+                      <Text style={{ 
+                        fontSize: 14, 
+                        color: colors.textSecondary, 
+                        fontWeight: '600', 
+                        textAlign: 'center', 
+                        lineHeight: 20,
+                        paddingHorizontal: 10,
+                        marginBottom: 20
+                      }}>
+                        {hasRestrictedFood 
+                          ? 'This meal contains items strictly avoided on your active plan. Logging is disabled for clinical safety.' 
+                          : 'This meal exceeds your safe sugar/carb threshold. Intake is blocked to prevent glucose spikes.'}
+                      </Text>
+                      
+                      <View style={{ 
+                        flexDirection: 'row', 
+                        alignItems: 'center', 
+                        backgroundColor: colors.error, 
+                        paddingHorizontal: 20, 
+                        paddingVertical: 12, 
+                        borderRadius: 14,
+                        gap: 8
+                      }}>
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13, textTransform: 'uppercase' }}>
+                          View Reason & Swaps
                         </Text>
-                        <Text style={{ fontSize: 12, color: colors.error, marginTop: 8, fontWeight: '700' }}>VIEW REASON & SWAPS</Text>
+                        <ArrowRight size={16} color="#FFF" strokeWidth={3} />
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -1385,6 +1542,224 @@ export default function MealLogScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* ✋ Human-in-the-Loop Portion Confirmation Modal */}
+      <Modal
+        visible={isPortionModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsPortionModalVisible(false)}
+      >
+        <View style={[styles.modalOverlay, themed.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]}>
+          <View style={[styles.modalContent, themed.modalContent, { 
+            borderTopLeftRadius: 32, 
+            borderTopRightRadius: 32,
+            height: 'auto',
+            maxHeight: hp(85),
+            backgroundColor: colors.background
+          }]}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            
+            <View style={{ alignItems: 'center', marginBottom: 24, paddingHorizontal: 20 }}>
+              <View style={{ 
+                width: 56, 
+                height: 56, 
+                borderRadius: 20, 
+                backgroundColor: colors.primary + '15', 
+                justifyContent: 'center', 
+                alignItems: 'center',
+                marginBottom: 16
+              }}>
+                <Sparkles size={28} color={colors.primary} />
+              </View>
+              <Text style={{ 
+                color: colors.text, 
+                fontSize: 24, 
+                fontWeight: '900', 
+                textAlign: 'center',
+                letterSpacing: -0.5
+              }}>
+                Confirm Portion Size
+              </Text>
+              <Text style={{ 
+                color: colors.textSecondary, 
+                textAlign: 'center', 
+                marginTop: 8, 
+                fontSize: 15,
+                lineHeight: 22
+              }}>
+                We detected the following items. Please confirm the portion sizes to ensure clinical accuracy.
+              </Text>
+            </View>
+
+            <ScrollView 
+              style={{ maxHeight: hp(45) }} 
+              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {nutritionalData?.foodItems.map((item, index) => (
+                <View key={index} style={{ 
+                  marginBottom: 16, 
+                  backgroundColor: colors.backgroundSecondary, 
+                  borderRadius: 24, 
+                  padding: 20,
+                  borderWidth: 1,
+                  borderColor: colors.border + '30'
+                }}>
+                  <View style={{ marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 }}>
+                        <View style={{ 
+                          width: 44, 
+                          height: 44, 
+                          borderRadius: 14, 
+                          backgroundColor: '#FFF', 
+                          justifyContent: 'center', 
+                          alignItems: 'center',
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.08,
+                          shadowRadius: 5,
+                          elevation: 3
+                        }}>
+                          <UtensilsCrossed size={22} color={colors.textSecondary} />
+                        </View>
+                        <Text 
+                          numberOfLines={1}
+                          style={{ color: colors.text, fontSize: 18, fontWeight: '800', flex: 1, letterSpacing: -0.4 }}
+                        >
+                          {item.name}
+                        </Text>
+                      </View>
+                      
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <TouchableOpacity 
+                          onPress={() => openCorrectionModal(index)}
+                          style={{ 
+                            flexDirection: 'row', 
+                            alignItems: 'center', 
+                            backgroundColor: colors.primary + '10', 
+                            paddingHorizontal: 10, 
+                            paddingVertical: 6, 
+                            borderRadius: 10, 
+                            gap: 4 
+                          }}
+                        >
+                          <Utensils size={12} color={colors.primary} />
+                          <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>Correct</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                          onPress={() => removeFoodItem(index)}
+                          style={{ 
+                            width: 32, 
+                            height: 32, 
+                            borderRadius: 10, 
+                            backgroundColor: '#FEF2F2', 
+                            justifyContent: 'center', 
+                            alignItems: 'center' 
+                          }}
+                        >
+                          <Trash2 size={15} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={{ 
+                    flexDirection: 'row', 
+                    backgroundColor: Platform.OS === 'web' ? 'rgba(0,0,0,0.03)' : '#E9ECEF', 
+                    borderRadius: 18, 
+                    padding: 6,
+                    gap: 6
+                  }}>
+                    {[
+                      { label: 'Small', sub: '0.7x', icon: <ChevronDown size={14} />, color: '#3498DB' },
+                      { label: 'Standard', sub: '1.0x', icon: <Check size={16} />, color: colors.primary },
+                      { label: 'Big', sub: '1.4x', icon: <ChevronUp size={14} />, color: '#F39C12' }
+                    ].map((sizeObj) => {
+                      const size = sizeObj.label;
+                      const isActive = ((item as any).portionSize || 'Standard') === size;
+                      return (
+                        <TouchableOpacity
+                          key={size}
+                          onPress={() => updatePortionSize(index, size)}
+                          activeOpacity={0.7}
+                          style={{
+                            flex: 1,
+                            paddingVertical: 10,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: 14,
+                            backgroundColor: isActive ? sizeObj.color : 'transparent',
+                            ...(isActive && Platform.OS === 'web' ? { boxShadow: '0px 4px 10px rgba(0,0,0,0.12)' } : {})
+                          }}
+                        >
+                          <View style={{ alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}>
+                            <View style={{ height: 20, justifyContent: 'center', marginBottom: 4 }}>
+                              {isActive ? React.cloneElement(sizeObj.icon as any, { color: '#FFF', strokeWidth: 3, size: 18 }) : null}
+                            </View>
+                            <Text style={{ 
+                              color: isActive ? '#FFF' : colors.textSecondary, 
+                              fontWeight: isActive ? '900' : '700',
+                              fontSize: 11,
+                              textTransform: 'uppercase',
+                              letterSpacing: 1
+                            }}>
+                              {size}
+                            </Text>
+                          </View>
+                          <Text style={{ 
+                            color: isActive ? 'rgba(255,255,255,0.9)' : colors.textSecondary + '70', 
+                            fontSize: 10,
+                            fontWeight: '800',
+                            marginTop: 1
+                          }}>
+                            {sizeObj.sub}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={{ padding: 20, paddingTop: 10, paddingBottom: insets.bottom + 20 }}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={{
+                  height: 60,
+                  borderRadius: 20,
+                  overflow: 'hidden',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 12,
+                  elevation: 8,
+                }}
+                onPress={() => {
+                  setIsPortionModalVisible(false);
+                  setIsNutritionVisible(true);
+                }}
+              >
+                <LinearGradient 
+                  colors={colors.gradient.primary as any} 
+                  style={StyleSheet.absoluteFill} 
+                  start={{ x: 0, y: 0 }} 
+                  end={{ x: 1, y: 0 }} 
+                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 }}>Confirm & Verify</Text>
+                  <ArrowRight size={20} color="#FFF" strokeWidth={3} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Food Correction Modal */}
       <Modal
@@ -1479,7 +1854,7 @@ export default function MealLogScreen() {
             
             <Text style={styles.blockTitle}>High Metabolic Load Detected</Text>
             <Text style={styles.blockSubtitle}>
-              Based on your clinical status, <Text style={{fontWeight: '900', color: colors.text}}>{blockedFoodInfo?.riskyItem}</Text> significantly increases your blood glucose risk.
+              {blockedFoodInfo?.reason || 'Clinical Alert'}: <Text style={{fontWeight: '900', color: colors.text}}>{blockedFoodInfo?.riskyItem}</Text> significantly increases your blood glucose risk.
             </Text>
 
             <View style={styles.blockDivider} />
@@ -1720,7 +2095,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontWeight: '700',
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#1E293B',
+    letterSpacing: -0.5,
   },
   correctionLink: {
     fontSize: 13,
