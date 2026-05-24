@@ -1,3 +1,4 @@
+import { secureFetch as fetch } from '@/lib/apiClient';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
@@ -11,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
@@ -36,12 +38,20 @@ import {
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInDown, FadeInUp, ZoomIn, Layout } from 'react-native-reanimated';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';;
 import { useTheme } from '@/contexts/SettingsContext';
 import { useTranslation } from '@/hooks/use-translation';
 import { HEALTH_URL, DIABETES_URL } from '../constants/Api';
 
 const { width } = Dimensions.get('window');
+
+const showAlert = (title: string, message: string) => {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+};
 
 type HealthFormData = {
   age: string;
@@ -67,7 +77,7 @@ type Step = 'features' | 'results' | 'personal' | 'age' | 'lifestyle' | 'medical
 export default function HealthSetupScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, updateUser, completeHealthSetup, ensureAccessToken } = useUser();
+  const { user, ensureAccessToken, updateUser, completeHealthSetup } = useAuth();
   const { colors, scale } = useTheme();
   const { t } = useTranslation();
 
@@ -76,6 +86,13 @@ export default function HealthSetupScreen() {
   const [entryMode, setEntryMode] = useState<'selection' | 'manual' | 'results'>('selection');
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanResults, setLastScanResults] = useState<{ detected: {label: string, value: string}[], missing: string[] } | null>(null);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   const [formData, setFormData] = useState<HealthFormData>({
     age: '', sex: '', height: '', weight: '', bmi: '', pregnancies: '0',
@@ -84,9 +101,58 @@ export default function HealthSetupScreen() {
     bloodGlucoseEstimated: '', glucoseSource: 'manual'
   });
 
+  // 🧹 Auto-clean 'null' strings and HYDRATE from user profile
+  useEffect(() => {
+    if (user) {
+      setFormData(prev => {
+        const anyUser = user as any;
+        const health = anyUser.healthData || anyUser;
+        
+        // Helper to get value with 'null' string protection
+        const getSafe = (key: string, fallback: string = '') => {
+          const val = health[key];
+          if (val === undefined || val === null || val === 'null') return fallback;
+          return String(val);
+        };
+
+        return {
+          ...prev,
+          age: getSafe('age'),
+          sex: getSafe('sex'),
+          height: getSafe('height'),
+          weight: getSafe('weight'),
+          bmi: getSafe('bmi'),
+          pregnancies: getSafe('pregnancies', '0'),
+          highBP: getSafe('highBP'),
+          highChol: getSafe('highChol'),
+          genHlth: getSafe('genHlth'),
+          smoker: getSafe('smoker'),
+          physActivity: getSafe('physActivity'),
+          heartDiseaseOrAttack: getSafe('heartDiseaseOrAttack'),
+          hba1cEstimated: getSafe('hba1cEstimated'),
+          bloodGlucoseEstimated: getSafe('bloodGlucoseEstimated'),
+        };
+      });
+    }
+  }, [user?.id]); // Only hydrate when user changes or on mount
+
+  useEffect(() => {
+    const hasNulls = Object.values(formData).some(v => v === 'null');
+    if (hasNulls) {
+      setFormData(prev => {
+        const cleaned = { ...prev };
+        Object.keys(cleaned).forEach(key => {
+          const k = key as keyof HealthFormData;
+          if (cleaned[k] === 'null') (cleaned as any)[k] = '';
+        });
+        return cleaned;
+      });
+    }
+  }, [formData]);
+
   const steps: Step[] = ['features', 'personal', 'age', 'lifestyle', 'medical', 'review'];
   // 'results' is an intermediary state, not a main step in the progress bar
-  const currentStepIndex = steps.indexOf(currentStep);
+  const currentStepIndex = currentStep === 'results' ? 0 : steps.indexOf(currentStep);
   const progress = (currentStepIndex + 1) / steps.length;
 
   const themed = useMemo(() => ({
@@ -106,22 +172,32 @@ export default function HealthSetupScreen() {
         Alert.alert('Permission required', 'Allow access to photos to scan reports.');
         return;
       }
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.5, base64: true });
+      // Turned off allowsEditing so it takes the full rectangular report without forcing a crop
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: false, quality: 0.4, base64: true });
       if (result.canceled) return;
 
       setIsScanning(true);
       const token = await ensureAccessToken();
       const response = await fetch(`${HEALTH_URL}/scan`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token || ''}`, 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          'Authorization': `Bearer ${token || ''}`
+        },
         body: JSON.stringify({ imageBase64: result.assets[0].base64 })
       });
       const json = await response.json();
       setIsScanning(false);
+      console.log("🚀 [HealthSetup] Scan Response:", json);
 
       if (json.success && json.data) {
         const d = json.data;
         const mappedData: Partial<HealthFormData> = {};
+        
+        const safeStr = (val: any) => (val === undefined || val === null || val === 'null') ? '' : String(val);
+
         if (d.age) {
           const rawAge = parseInt(String(d.age).replace(/\D/g, ''));
           if (!isNaN(rawAge)) {
@@ -142,46 +218,82 @@ export default function HealthSetupScreen() {
             mappedData.age = cat;
           }
         }
-        if (d.weight) mappedData.weight = String(d.weight);
-        if (d.height) mappedData.height = String(d.height);
-        if (d.sex !== undefined) mappedData.sex = String(d.sex);
-        if (d.highBP !== undefined) mappedData.highBP = String(d.highBP);
-        if (d.highChol !== undefined) mappedData.highChol = String(d.highChol);
-        if (d.genHlth !== undefined) mappedData.genHlth = String(d.genHlth);
+
+        const w = safeStr(d.weight); if (w) mappedData.weight = w;
+        const h = safeStr(d.height); if (h) mappedData.height = h;
+        const s = safeStr(d.sex); if (s) mappedData.sex = s;
+        
+        // Safe BP Normalization
+        const bpRaw = d.bloodPressure !== undefined ? d.bloodPressure : d.highBP;
+        const bpS = safeStr(bpRaw);
+        if (bpS) {
+          mappedData.highBP = (bpS === '1' || bpS.toLowerCase() === 'high' || bpS.toLowerCase() === 'true') ? '1' : '0';
+        }
+
+        // Safe Cholesterol Normalization
+        const cholRaw = d.cholesterol !== undefined ? d.cholesterol : d.highChol;
+        const cholS = safeStr(cholRaw);
+        if (cholS) {
+          mappedData.highChol = (cholS === '1' || cholS.toLowerCase() === 'high' || cholS.toLowerCase() === 'true') ? '1' : '0';
+        }
+
+        const gh = safeStr(d.genHlth); if (gh) mappedData.genHlth = gh;
         if (d.hba1cEstimated) { mappedData.hba1cEstimated = String(d.hba1cEstimated); mappedData.hba1cSource = 'report'; }
         if (d.bloodGlucoseEstimated) { mappedData.bloodGlucoseEstimated = String(d.bloodGlucoseEstimated); mappedData.glucoseSource = 'report'; }
         
-        setFormData(prev => ({ ...prev, ...mappedData }));
+        // Filter out data that we already have (only update if current is empty)
+        const updateData: Partial<HealthFormData> = {};
+        let newlyFoundCount = 0;
+        
+        Object.keys(mappedData).forEach((key) => {
+          const k = key as keyof HealthFormData;
+          const currentVal = String(formData[k] || '').trim();
+          if (!currentVal || currentVal === '' || currentVal === 'null') {
+            updateData[k] = mappedData[k] as any;
+            newlyFoundCount++;
+          }
+        });
+
+        console.log("🚀 [HealthSetup] Newly Found Fields:", newlyFoundCount, "at step:", currentStep);
+
+        if (newlyFoundCount === 0 && currentStep === 'results') {
+          showAlert("No New Data", "This report does not contain any of the missing metabolic parameters.");
+          return;
+        }
+
+        const nextFormData = { ...formData, ...updateData };
+        setFormData(nextFormData);
         
         const detectedItems = [];
-        if (mappedData.age) detectedItems.push({ label: 'Age Category', value: ['18-24', '25-29', '30-34', '35-39', '40-44', '45-49', '50-54', '55-59', '60-64', '65-69', '70-74', '75-79', '80+'][parseInt(mappedData.age)-1] });
-        if (mappedData.weight) detectedItems.push({ label: 'Weight', value: `${mappedData.weight}kg` });
-        if (mappedData.height) detectedItems.push({ label: 'Height', value: `${mappedData.height}cm` });
-        if (mappedData.sex !== undefined) detectedItems.push({ label: 'Sex', value: mappedData.sex === '1' ? 'Male' : 'Female' });
-        if (mappedData.highBP !== undefined) detectedItems.push({ label: 'Blood Pressure', value: mappedData.highBP === '1' ? 'High' : 'Normal' });
-        if (mappedData.highChol !== undefined) detectedItems.push({ label: 'Cholesterol', value: mappedData.highChol === '1' ? 'High' : 'Normal' });
-        if (mappedData.hba1cEstimated) detectedItems.push({ label: 'HbA1c', value: `${mappedData.hba1cEstimated}%` });
-        if (mappedData.bloodGlucoseEstimated) detectedItems.push({ label: 'Glucose', value: `${mappedData.bloodGlucoseEstimated} mg/dL` });
+        if (nextFormData.age) detectedItems.push({ label: 'Age Category', value: ['18-24', '25-29', '30-34', '35-39', '40-44', '45-49', '50-54', '55-59', '60-64', '65-69', '70-74', '75-79', '80+'][parseInt(nextFormData.age)-1] });
+        if (nextFormData.weight) detectedItems.push({ label: 'Weight', value: `${nextFormData.weight}kg` });
+        if (nextFormData.height) detectedItems.push({ label: 'Height', value: `${nextFormData.height}cm` });
+        if (nextFormData.sex !== undefined && nextFormData.sex !== '') detectedItems.push({ label: 'Sex', value: nextFormData.sex === '1' ? 'Male' : 'Female' });
+        if (nextFormData.highBP !== undefined && nextFormData.highBP !== '') detectedItems.push({ label: 'Blood Pressure', value: nextFormData.highBP === '1' ? 'High' : 'Normal' });
+        if (nextFormData.highChol !== undefined && nextFormData.highChol !== '') detectedItems.push({ label: 'Cholesterol', value: nextFormData.highChol === '1' ? 'High' : 'Normal' });
+        if (nextFormData.hba1cEstimated) detectedItems.push({ label: 'HbA1c', value: `${nextFormData.hba1cEstimated}%` });
+        if (nextFormData.bloodGlucoseEstimated) detectedItems.push({ label: 'Glucose', value: `${nextFormData.bloodGlucoseEstimated} mg/dL` });
 
-        // Identify Missing Fields
+        // Identify Remaining Missing Fields
         const missing = [];
-        const combined = { ...formData, ...mappedData };
-        if (!combined.age) missing.push('Age');
-        if (!combined.sex) missing.push('Biological Sex');
-        if (!combined.height) missing.push('Height');
-        if (!combined.weight) missing.push('Weight');
-        if (!combined.smoker) missing.push('Smoking History');
-        if (!combined.physActivity) missing.push('Physical Activity');
-        if (!combined.highBP) missing.push('Blood Pressure');
-        if (!combined.highChol) missing.push('Cholesterol');
-        if (!combined.genHlth) missing.push('General Health');
+        if (!nextFormData.age) missing.push('Age');
+        if (!nextFormData.sex) missing.push('Biological Sex');
+        if (!nextFormData.height) missing.push('Height');
+        if (!nextFormData.weight) missing.push('Weight');
+        if (!nextFormData.smoker) missing.push('Smoking History');
+        if (!nextFormData.physActivity) missing.push('Physical Activity');
+        if (!nextFormData.highBP) missing.push('Blood Pressure');
+        if (!nextFormData.highChol) missing.push('Cholesterol');
+        if (!nextFormData.genHlth) missing.push('General Health');
 
         setLastScanResults({ detected: detectedItems, missing });
         setEntryMode('results');
         setCurrentStep('results');
+      } else {
+        showAlert("Scan Unsuccessful", json.message || "We couldn't extract data from this report. Please ensure the photo is clear and contains metabolic metrics.");
       }
     } catch (e) {
-      Alert.alert("Error", "Could not scan report.");
+      showAlert("Error", "Could not scan report.");
     } finally {
       setIsScanning(false);
     }
@@ -210,10 +322,27 @@ export default function HealthSetupScreen() {
       try {
         const token = await ensureAccessToken();
         const bmiVal = calculateBMI();
+        
+        // Convert actual age to CDC 13-level category
+        const ageNum = parseInt(formData.age) || 0;
+        let ageCategory = 1;
+        if (ageNum >= 80) ageCategory = 13;
+        else if (ageNum >= 75) ageCategory = 12;
+        else if (ageNum >= 70) ageCategory = 11;
+        else if (ageNum >= 65) ageCategory = 10;
+        else if (ageNum >= 60) ageCategory = 9;
+        else if (ageNum >= 55) ageCategory = 8;
+        else if (ageNum >= 50) ageCategory = 7;
+        else if (ageNum >= 45) ageCategory = 6;
+        else if (ageNum >= 40) ageCategory = 5;
+        else if (ageNum >= 35) ageCategory = 4;
+        else if (ageNum >= 30) ageCategory = 3;
+        else if (ageNum >= 25) ageCategory = 2;
+        
         const payload = { 
           ...formData, 
           bmi: parseFloat(bmiVal || '0'),
-          age: parseInt(formData.age), 
+          age: ageCategory, 
           sex: parseInt(formData.sex), 
           highBP: parseInt(formData.highBP), 
           highChol: parseInt(formData.highChol), 
@@ -228,19 +357,15 @@ export default function HealthSetupScreen() {
           bloodGlucoseEstimated: formData.bloodGlucoseEstimated ? parseFloat(formData.bloodGlucoseEstimated) : undefined
         };
 
-        // Sync local context immediately so home screen is updated
-        // Combining health completion flag with data update to ensure consistency
-        await updateUser({
-          ...payload,
-          hba1cEstimated: payload.hba1cEstimated,
-          bloodGlucoseEstimated: payload.bloodGlucoseEstimated,
-          healthSetupCompleted: true
-        });
-
         console.log("🚀 [HealthSetup] Submitting Payload:", JSON.stringify(payload, null, 2));
         const res = await fetch(HEALTH_URL, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+            'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify(payload)
         });
         
@@ -249,19 +374,27 @@ export default function HealthSetupScreen() {
           try {
             await fetch(`${DIABETES_URL}/predict`, {
               method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              headers: { 
+                'Authorization': `Bearer ${token}`, 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+              },
               body: JSON.stringify(payload)
             });
           } catch (predictionErr) {
             console.error("🚀 [HealthSetup] Auto-prediction failed:", predictionErr);
           }
 
-          // Mark setup as complete in local storage too
-          await completeHealthSetup();
+          // Mark setup as complete and sync ALL data to local storage in one go
+          await completeHealthSetup(payload);
           router.replace('/(tabs)/home');
+        } else {
+          const errorText = await res.text();
+          Alert.alert("Server Error", `Failed to save: Status ${res.status}\n\n${errorText}`);
         }
-      } catch (e) {
-        Alert.alert("Error", "Could not save health profile.");
+      } catch (e: any) {
+        Alert.alert("Network Error", `Could not save health profile: ${e.message}`);
       } finally { setIsLoading(false); }
     }
   };
@@ -271,7 +404,8 @@ export default function HealthSetupScreen() {
     if (step === 'personal') {
       const h = parseFloat(formData.height);
       const w = parseFloat(formData.weight);
-      return formData.sex !== '' && !isNaN(h) && h > 0 && !isNaN(w) && w > 0;
+      const pregValid = formData.sex === '0' ? formData.pregnancies !== '' : true;
+      return formData.sex !== '' && !isNaN(h) && h > 0 && !isNaN(w) && w > 0 && pregValid;
     }
     if (step === 'age') {
       return formData.age !== '';
@@ -283,6 +417,7 @@ export default function HealthSetupScreen() {
       return (
         formData.highBP !== '' && 
         formData.highChol !== '' && 
+        formData.heartDiseaseOrAttack !== '' &&
         formData.genHlth !== '' &&
         formData.hba1cEstimated !== '' &&
         formData.bloodGlucoseEstimated !== ''
@@ -315,7 +450,13 @@ export default function HealthSetupScreen() {
             backgroundColor: isSelected ? colors.primary + '08' : '#F8FAFC' }
         ]}
       >
-        <Text style={[styles.radioTileLabel, { color: isSelected ? colors.primary : colors.text }]}>{label}</Text>
+        <Text 
+          style={[styles.radioTileLabel, { color: isSelected ? colors.primary : colors.text, flex: 1, marginRight: 8 }]} 
+          numberOfLines={1} 
+          adjustsFontSizeToFit
+        >
+          {label}
+        </Text>
         <View style={[styles.radioIndicator, { borderColor: isSelected ? colors.primary : 'rgba(0,0,0,0.1)' }]}>
           {isSelected && <View style={[styles.radioIndicatorInner, { backgroundColor: colors.primary }]} />}
         </View>
@@ -385,35 +526,74 @@ export default function HealthSetupScreen() {
         return (
           <Animated.View entering={FadeInDown} style={styles.stepContainer}>
             <Text style={themed.sectionTitle}>Precision Audit Setup</Text>
-            <Text style={[styles.stepDesc, { color: colors.textSecondary }]}>Initialize your metabolic baseline. Scan a recent medical report to auto-populate biometric fields.</Text>
+            <Text style={[styles.stepDesc, { color: colors.textSecondary, marginBottom: 32 }]}>
+              Initialize your metabolic baseline. Choose a method to securely import your clinical data.
+            </Text>
             
-            <TouchableOpacity activeOpacity={0.8} style={styles.scanAction} onPress={handleScanReport}>
-              <LinearGradient colors={['#00B4D8', '#0077B6']} style={StyleSheet.absoluteFill} start={{x:0,y:0}} end={{x:1,y:1}} />
-              <View style={styles.scanContent}>
-                <ScanLine size={32} color="#FFF" strokeWidth={2.5} />
-                <View>
-                  <Text style={styles.scanTitle}>AI Scanner Audit</Text>
-                  <Text style={styles.scanSub}>Auto-detect BMI, HbA1c, and vitals</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-            
-            <View style={styles.featureList}>
-              {[
-                { icon: Stethoscope, title: 'Medical Accuracy', desc: 'Validated clinical risk detection models' },
-                { icon: ShieldCheck, title: 'Data Sovereignty', desc: 'Encrypted, local-first metabolic data' },
-                { icon: Zap, title: 'Instant Insights', desc: 'Real-time HbA1c and Glucose estimates' }
-              ].map((f, i) => (
-                <View key={i} style={styles.featureItem}>
-                  <f.icon size={24} color={colors.primary} />
-                  <View style={{ marginLeft: 16 }}>
-                    <Text style={styles.fTitle}>{f.title}</Text>
-                    <Text style={styles.fDesc}>{f.desc}</Text>
+            <View style={styles.choiceGroup}>
+              <TouchableOpacity activeOpacity={0.8} style={styles.scanAction} onPress={handleScanReport}>
+                <LinearGradient colors={['#00B4D8', '#0077B6']} style={StyleSheet.absoluteFill} start={{x:0,y:0}} end={{x:1,y:1}} />
+                <View style={styles.scanContent}>
+                  <View style={styles.iconCircle}>
+                    <ScanLine size={28} color="#FFF" strokeWidth={2.5} />
                   </View>
+                  <View style={styles.textContent}>
+                    <View style={styles.badgeRow}>
+                      <Text style={styles.scanTitle}>AI Scanner Audit</Text>
+                    </View>
+                    <Text style={styles.scanSub}>Auto-detect metrics from report</Text>
+                    <View style={[styles.recomBadge, { alignSelf: 'flex-start', marginTop: 4 }]}>
+                      <Text style={styles.recomText}>RECOMMENDED</Text>
+                    </View>
+                  </View>
+                  <ChevronRight size={20} color="#FFF" opacity={0.6} />
                 </View>
-              ))}
+              </TouchableOpacity>
+
+              <View style={styles.orDividerContainer}>
+                <View style={styles.orLine} />
+                <Text style={styles.orLabel}>OR</Text>
+                <View style={styles.orLine} />
+              </View>
+
+              <TouchableOpacity activeOpacity={0.8} style={[styles.scanAction, { backgroundColor: '#FFF', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, borderWidth: 1, borderColor: '#F1F5F9' }]} onPress={() => setCurrentStep('personal')}>
+                <View style={styles.scanContent}>
+                  <View style={[styles.iconCircle, { backgroundColor: '#F1F5F9' }]}>
+                    <User size={24} color="#64748B" />
+                  </View>
+                  <View style={styles.textContent}>
+                    <Text style={[styles.scanTitle, { color: '#1E293B' }]}>Manual Data Entry</Text>
+                    <Text style={[styles.scanSub, { color: '#94A3B8' }]}>Enter your vitals manually</Text>
+                  </View>
+                  <ChevronRight size={20} color="#CBD5E1" />
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.whyAuditSection}>
+              <View style={styles.whyHeader}>
+                <View style={styles.whyDivider} />
+                <Text style={styles.whyTitle}>WHY COMPLETE THIS AUDIT?</Text>
+                <View style={styles.whyDivider} />
+              </View>
+              
+              <View style={styles.featureListCondensed}>
+                {[
+                  { icon: Stethoscope, title: 'Medical Accuracy', desc: 'Validated risk detection models' },
+                  { icon: ShieldCheck, title: 'Data Sovereignty', desc: 'Encrypted, local-first data' },
+                  { icon: Zap, title: 'Instant Insights', desc: 'Real-time metabolic estimates' }
+                ].map((f, i) => (
+                  <View key={i} style={styles.featureItemCondensed}>
+                    <View style={[styles.smallIconBox, { backgroundColor: colors.primary + '10' }]}>
+                      <f.icon size={16} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.fTitleSmall}>{f.title}</Text>
+                      <Text style={styles.fDescSmall}>{f.desc}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
             </View>
           </Animated.View>
         );
@@ -564,6 +744,7 @@ export default function HealthSetupScreen() {
         );
 
       case 'medical':
+        console.log("🚀 [HealthSetup] DEBUG MEDICAL STATE:", { highBP: formData.highBP, highChol: formData.highChol });
         return (
           <Animated.View entering={FadeInDown} style={styles.stepContainer}>
             <View style={styles.headerTitleRow}>
@@ -591,11 +772,11 @@ export default function HealthSetupScreen() {
                   <Text style={styles.vitalLabel}>Blood Pressure</Text>
                 </View>
                 <View style={styles.vitalToggle}>
-                  <TouchableOpacity onPress={() => setFormData({...formData, highBP: '0'})} style={[styles.toggleOption, formData.highBP === '0' && styles.toggleActive]}>
-                    <Text style={[styles.toggleText, formData.highBP === '0' && styles.toggleTextActive]}>Normal</Text>
+                  <TouchableOpacity onPress={() => setFormData({...formData, highBP: '0'})} style={[styles.toggleOption, formData.highBP == '0' && styles.toggleActive]}>
+                    <Text style={[styles.toggleText, formData.highBP == '0' && styles.toggleTextActive]}>Normal</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setFormData({...formData, highBP: '1'})} style={[styles.toggleOption, formData.highBP === '1' && styles.toggleActiveHigh]}>
-                    <Text style={[styles.toggleText, formData.highBP === '1' && styles.toggleTextActive]}>High</Text>
+                  <TouchableOpacity onPress={() => setFormData({...formData, highBP: '1'})} style={[styles.toggleOption, formData.highBP == '1' && styles.toggleActiveHigh]}>
+                    <Text style={[styles.toggleText, formData.highBP == '1' && styles.toggleTextActive]}>High</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -610,11 +791,30 @@ export default function HealthSetupScreen() {
                   <Text style={styles.vitalLabel}>Cholesterol</Text>
                 </View>
                 <View style={styles.vitalToggle}>
-                  <TouchableOpacity onPress={() => setFormData({...formData, highChol: '0'})} style={[styles.toggleOption, formData.highChol === '0' && styles.toggleActive]}>
-                    <Text style={[styles.toggleText, formData.highChol === '0' && styles.toggleTextActive]}>Normal</Text>
+                  <TouchableOpacity onPress={() => setFormData({...formData, highChol: '0'})} style={[styles.toggleOption, formData.highChol == '0' && styles.toggleActive]}>
+                    <Text style={[styles.toggleText, formData.highChol == '0' && styles.toggleTextActive]}>Normal</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setFormData({...formData, highChol: '1'})} style={[styles.toggleOption, formData.highChol === '1' && styles.toggleActiveHigh]}>
-                    <Text style={[styles.toggleText, formData.highChol === '1' && styles.toggleTextActive]}>High</Text>
+                  <TouchableOpacity onPress={() => setFormData({...formData, highChol: '1'})} style={[styles.toggleOption, formData.highChol == '1' && styles.toggleActiveHigh]}>
+                    <Text style={[styles.toggleText, formData.highChol == '1' && styles.toggleTextActive]}>High</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={[styles.divider, { marginVertical: 12 }]} />
+
+              <View style={styles.vitalRow}>
+                <View style={styles.vitalInfo}>
+                  <View style={[styles.vitalIcon, { backgroundColor: '#FEE2E2' }]}>
+                    <Heart size={18} color="#EF4444" />
+                  </View>
+                  <Text style={styles.vitalLabel}>Heart Disease</Text>
+                </View>
+                <View style={styles.vitalToggle}>
+                  <TouchableOpacity onPress={() => setFormData({...formData, heartDiseaseOrAttack: '0'})} style={[styles.toggleOption, formData.heartDiseaseOrAttack == '0' && styles.toggleActive]}>
+                    <Text style={[styles.toggleText, formData.heartDiseaseOrAttack == '0' && styles.toggleTextActive]}>No</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setFormData({...formData, heartDiseaseOrAttack: '1'})} style={[styles.toggleOption, formData.heartDiseaseOrAttack == '1' && styles.toggleActiveHigh]}>
+                    <Text style={[styles.toggleText, formData.heartDiseaseOrAttack == '1' && styles.toggleTextActive]}>Yes</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -763,11 +963,11 @@ export default function HealthSetupScreen() {
         {renderProgress()}
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: 180 }]} showsVerticalScrollIndicator={false}>
         {renderStepContent()}
       </ScrollView>
 
-      {currentStep !== 'results' && (
+      {!isKeyboardVisible && currentStep !== 'results' && currentStep !== 'features' && (
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 24) }]}>
 
           <TouchableOpacity 
@@ -816,7 +1016,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 32, paddingTop: 32 },
   stepContainer: { width: '100%' },
   stepDesc: { fontSize: 15, fontWeight: '600', lineHeight: 22, marginTop: 12, marginBottom: 32 },
-  scanAction: { height: 100, borderRadius: 24, overflow: 'hidden', justifyContent: 'center', marginBottom: 40, elevation: 8, shadowOpacity: 0.2, shadowRadius: 15, shadowColor: '#00B4D8' },
+  scanAction: { height: 110, borderRadius: 24, overflow: 'hidden', justifyContent: 'center', marginBottom: 0, elevation: 8, shadowOpacity: 0.2, shadowRadius: 15, shadowColor: '#00B4D8' },
   scanContent: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, gap: 16 },
   scanTitle: { color: '#FFF', fontSize: 18, fontWeight: '900' },
   scanSub: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '700' },
@@ -874,8 +1074,8 @@ const styles = StyleSheet.create({
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 32 },
   titleIcon: { width: 52, height: 52, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   questionCard: { padding: 24, marginBottom: 20, borderRadius: 28 },
-  radioTile: { flex: 1, height: 60, borderRadius: 18, borderWidth: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18 },
-  radioTileLabel: { fontSize: 14, fontWeight: '800' },
+  radioTile: { flex: 1, height: 60, borderRadius: 18, borderWidth: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 },
+  radioTileLabel: { fontSize: 13, fontWeight: '800' },
   radioIndicator: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
   radioIndicatorInner: { width: 10, height: 10, borderRadius: 5 },
   vitalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
@@ -884,10 +1084,10 @@ const styles = StyleSheet.create({
   vitalLabel: { fontSize: 14, fontWeight: '700', color: '#1E293B' },
   vitalToggle: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4 },
   toggleOption: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  toggleActive: { backgroundColor: '#10B981', elevation: 2 },
-  toggleActiveHigh: { backgroundColor: '#EF4444', elevation: 2 },
-  toggleText: { fontSize: 12, fontWeight: '800', color: '#64748B' },
-  toggleTextActive: { color: '#FFF' },
+  toggleActive: { backgroundColor: '#059669', elevation: 4, shadowOpacity: 0.3, shadowRadius: 4, shadowColor: '#059669' },
+  toggleActiveHigh: { backgroundColor: '#DC2626', elevation: 4, shadowOpacity: 0.3, shadowRadius: 4, shadowColor: '#DC2626' },
+  toggleText: { fontSize: 13, fontWeight: '700', color: '#64748B' },
+  toggleTextActive: { color: '#FFF', fontWeight: '900' },
   aiGlowContainer: { marginVertical: 16 },
   glassCard: { backgroundColor: 'rgba(255,255,255,0.9)', borderWidth: 1, borderColor: 'rgba(0,180,216,0.2)', elevation: 15, shadowColor: '#00B4D8', shadowOpacity: 0.1, shadowRadius: 30, padding: 28 },
   diagnosticHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
@@ -905,4 +1105,22 @@ const styles = StyleSheet.create({
   statusBadgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
   statusTag: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
   statusTagText: { fontSize: 11, fontWeight: '900' },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  recomBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  recomText: { color: '#FFF', fontSize: 8, fontWeight: '900' },
+  iconCircle: { width: 52, height: 52, borderRadius: 26, justifyContent: 'center', alignItems: 'center' },
+  choiceGroup: { gap: 16, marginBottom: 40 },
+  whyAuditSection: { marginTop: 8 },
+  whyHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+  whyDivider: { flex: 1, height: 1, backgroundColor: 'rgba(0,0,0,0.05)' },
+  whyTitle: { fontSize: 10, fontWeight: '900', color: '#94A3B8', letterSpacing: 1.5 },
+  featureListCondensed: { gap: 16 },
+  featureItemCondensed: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  smallIconBox: { width: 32, height: 32, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  fTitleSmall: { fontSize: 14, fontWeight: '900', color: '#1E293B' },
+  fDescSmall: { fontSize: 12, fontWeight: '600', color: '#64748B' },
+  textContent: { flex: 1, marginLeft: 16, justifyContent: 'center' },
+  orDividerContainer: { flexDirection: 'row', alignItems: 'center', gap: 16, marginVertical: 16 },
+  orLine: { flex: 1, height: 1, backgroundColor: 'rgba(0,0,0,0.05)' },
+  orLabel: { fontSize: 12, fontWeight: '900', color: '#CBD5E1', letterSpacing: 1 },
 });
