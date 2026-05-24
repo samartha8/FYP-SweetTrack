@@ -1,0 +1,9 @@
+node_modules
+android
+ios
+backend
+.expo
+.git
+*.apk
+*.aab
+build
