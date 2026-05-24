@@ -1,3 +1,4 @@
+import { secureFetch as fetch } from '@/lib/apiClient';
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ColorValue, Platform, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -5,13 +6,13 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Heart, Brain, Activity, Droplet, Moon, Flame, TrendingUp, UtensilsCrossed, Camera, BarChart3, List, Link, ChevronRight, ShieldCheck, Zap, LayoutGrid, Trophy, Medal, Sparkles } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from '@/hooks/use-translation';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useHealth } from '@/contexts/HealthContext';;
 import { useMealTracking } from '@/contexts/MealTrackingContext';
 import { DIABETES_URL } from '../../constants/Api';
 import { useTheme } from '@/contexts/SettingsContext';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 60) / 2;
 
 // Persistent throttle ref across mounts
 let globalLastFetch = 0;
@@ -19,7 +20,14 @@ let globalLastFetch = 0;
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, healthMetrics, dailyGoals, rewardsPoints, streak, unlockedBadges = [], isGoogleFitConnected, connectGoogleFit, ensureAccessToken, syncGoogleFitData, syncRewards } = useUser();
+  const { user, hasOnboarded, isLoading, ensureAccessToken } = useAuth();
+  const { 
+    healthMetrics, dailyGoals, rewardsPoints, streak, 
+    fetchDailyMetrics, setWater, isGoogleFitConnected, 
+    riskStatus, riskProbability, unlockedBadges, syncRewards,
+    connectGoogleFit, syncGoogleFitData
+  } = useHealth();
+  if (__DEV__) console.log("🏠 [Home] isGoogleFitConnected:", isGoogleFitConnected);
   const { todayNutrition, activeDietDetails } = useMealTracking();
   const { colors, scale, ms, wp, hp } = useTheme(); // Global Theme Hook
   const { t } = useTranslation();
@@ -31,42 +39,6 @@ export default function HomeScreen() {
     insights: [] as string[]
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  // Dynamic Styles
-  const themed = useMemo(() => ({
-    container: { flex: 1 },
-    header: { backgroundColor: 'transparent' },
-    greeting: { color: colors.text, fontSize: scale(24) },
-    subtitle: { color: colors.textSecondary, fontSize: scale(14) },
-    sectionTitle: { color: colors.text, fontSize: scale(20) },
-    statValue: { color: colors.text, fontSize: scale(24) },
-    statUnit: { color: colors.textSecondary },
-    statLabel: { color: colors.textSecondary, fontSize: scale(14) },
-    featureLabel: { color: colors.text, fontSize: scale(14) },
-    rewardLabel: { color: colors.textSecondary, fontSize: scale(14) },
-    rewardValue: { fontSize: scale(28) },
-    tipTitle: { color: colors.text, fontSize: scale(16) },
-    tipDescription: { color: colors.textSecondary, fontSize: scale(14) },
-    card: { backgroundColor: colors.card, shadowColor: colors.cardShadow },
-    riskBadgeText: { fontSize: scale(12) },
-    riskScore: { fontSize: scale(48) },
-    riskLabel: { color: colors.textWhite, fontSize: scale(18) },
-    riskDescription: { color: colors.textWhite, fontSize: scale(14) },
-    sectionLink: { fontSize: scale(14) },
-    riskHeader: { marginBottom: scale(12) },
-    rewardItem: { alignItems: 'center' as const },
-    rewardDivider: { width: 1, height: scale(40), marginHorizontal: scale(5) },
-    googleFitTitle: { fontSize: scale(20) },
-    googleFitDescription: { fontSize: scale(14) },
-    statGoal: { fontSize: scale(12), color: colors.textSecondary },
-    // 📱 Responsive Layout
-    padL: ms(20),
-    padM: ms(16),
-    padS: ms(12),
-    cardGap: ms(12),
-    iconS: ms(24),
-    iconM: ms(40),
-  }), [colors, scale, ms, wp, hp, width]);
 
   const getHealthVal = useCallback((userObj: any, key: string, fallbackKey?: string) => {
     if (!userObj) return undefined;
@@ -155,7 +127,11 @@ export default function HomeScreen() {
           if (retryLimit === 1) globalLastFetch = now;
 
           const response = await fetch(`${DIABETES_URL}/latest?t=${now}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json',
+              'ngrok-skip-browser-warning': 'true'
+            }
           });
 
           if (response.status === 401 && retryLimit > 0) {
@@ -203,32 +179,26 @@ export default function HomeScreen() {
   }, [syncGoogleFitData]);
 
   const { riskScore, riskLevel } = predictionData;
-  const riskColor = riskLevel === 'High Risk' ? colors.risk.high : riskLevel === 'Medium Risk' ? colors.risk.moderate : colors.risk.low;
-
-  const quickStats = [
-    { icon: Activity, label: t.wellness.steps, value: healthMetrics.steps, goal: dailyGoals.steps, unit: '', color: colors.chart.bmi },
-    { icon: Droplet, label: t.wellness.water, value: healthMetrics.water, goal: dailyGoals.water, unit: t.wellness.unitWater, color: colors.secondary },
-    { icon: Moon, label: t.wellness.sleep, value: healthMetrics.sleep, goal: dailyGoals.sleep, unit: t.wellness.unitSleep, color: colors.chart.glucose },
-    { icon: Flame, label: t.wellness.calories, value: Math.round(todayNutrition.calories || 0), goal: activeDietDetails?.dailyCalorieTarget || dailyGoals.calories, unit: t.wellness.unitCalories, color: colors.warning },
-  ];
 
   const features = [
-    { icon: UtensilsCrossed, label: t.home.dietSuggestion, route: '/diet-suggestions', gradient: ['#10B981', '#059669'] }, // Emerald
-    { icon: Camera, label: t.home.mealLog, route: '/meal-log', gradient: ['#F59E0B', '#D97706'] }, // Amber
-    { icon: BarChart3, label: t.home.progress, route: '/progress', gradient: ['#3B82F6', '#2563EB'] }, // Royal Blue
-    { icon: LayoutGrid, label: t.mealDashboard.header, route: '/view-all-meals', gradient: ['#8B5CF6', '#6D28D9'] }, // Purple
+    { icon: UtensilsCrossed, label: t.home.dietSuggestion, route: '/diet-suggestions', gradient: ['#10B981', '#059669'] }, // Emerald Green
+    { icon: Camera, label: t.home.mealLog, route: '/meal-log', gradient: ['#F59E0B', '#D97706'] }, // Amber Orange
+    { icon: BarChart3, label: t.home.progress, route: '/progress', gradient: ['#3B82F6', '#2563EB'] }, // Bright Blue
+    { icon: LayoutGrid, label: t.mealDashboard.header, route: '/view-all-meals', gradient: ['#8B5CF6', '#7C3AED'] }, // Modern Purple
   ];
 
   return (
-    <LinearGradient
-      colors={['#DCFCE7', '#F0FDF4', '#FFFFFF']} // Emerald 100 -> Green 50 -> White (Wellness Gradient)
-      style={[styles.container, { paddingTop: insets.top }]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-    >
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#F8FAFC', '#F1F5F9', '#E2E8F0']} // Premium 'Studio' Gradient
+        style={[StyleSheet.absoluteFill]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -239,227 +209,241 @@ export default function HomeScreen() {
           />
         }
       >
-        <View style={[styles.header, themed.header]}>
+        <View style={styles.header}>
           <View>
-            <Text style={[styles.greeting, themed.greeting]}>
+            <Text style={[styles.greeting, { color: '#1E293B', fontWeight: '800', letterSpacing: -0.5 }]}>
               {t.home.greeting}, {user?.name ? user.name : 'User'}!
             </Text>
-            <Text style={[styles.subtitle, themed.subtitle]}>{t.home.subtitle}</Text>
+            <Text style={[styles.subtitle, { color: '#64748B', fontWeight: '500' }]}>{t.home.subtitle}</Text>
           </View>
+          <TouchableOpacity style={styles.profileButton}>
+             <LinearGradient
+              colors={['#10B981', '#059669']}
+              style={styles.profileGradient}
+            >
+              <Text style={styles.profileInitial}>{(user?.name || 'U').charAt(0).toUpperCase()}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity
-          style={[styles.riskCard, { shadowColor: colors.cardShadow }]}
-          activeOpacity={0.8}
+          style={styles.riskCardContainer}
+          activeOpacity={0.9}
           onPress={() => router.push('/prediction' as any)}
         >
           <LinearGradient
-            colors={[riskColor, riskColor + 'C0'] as any}
-            style={styles.riskGradient}
+            colors={riskLevel === 'High Risk' ? ['#FF4D4D', '#F43F5E'] : ['#10B981', '#059669']}
+            style={styles.riskCardGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <View style={styles.riskHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Brain size={themed.iconS} color={colors.textWhite} strokeWidth={2.5} />
-                <Text style={[themed.riskLabel, { marginBottom: 0, fontSize: scale(11), fontWeight: '900', letterSpacing: 1.5, color: colors.textWhite, textTransform: 'uppercase', opacity: 0.9 }]}>
-                  SweetTrack AI Analysis
-                </Text>
+            <View style={styles.riskCardGlass} />
+            <View style={styles.riskCardHeader}>
+              <View style={styles.aiBadge}>
+                <Sparkles size={12} color="#FFF" />
+                <Text style={styles.aiBadgeText}>CLINICAL AI ANALYSIS</Text>
               </View>
               {!isUnchanged && (
-                <View style={[styles.riskBadge, { backgroundColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 12 }]}>
-                  <Text style={[styles.riskBadgeText, { color: '#ffffff', fontWeight: '800' }]}>
-                    {t.prediction?.outdated || "OUTDATED"}
-                  </Text>
+                <View style={styles.updateBadge}>
+                  <Text style={styles.updateBadgeText}>REFRESH NEEDED</Text>
                 </View>
               )}
             </View>
 
-            <View style={{ marginTop: 16, marginBottom: 8 }}>
-              <Text style={[styles.riskScore, themed.riskScore, { fontSize: scale(36), fontWeight: '900', color: colors.textWhite }]}>
-                {riskLevel === 'High Risk' ? (t?.home?.riskPositive || "POSITIVE") : (t?.home?.riskNegative || "NEGATIVE")}
-              </Text>
+            <View style={styles.riskMainContent}>
+              <View style={styles.riskScoreWrapper}>
+                <Text style={styles.riskScoreTitle}>
+                  {riskLevel === 'High Risk' ? 'DIABETIC PROFILE' : 'HEALTHY PROFILE'}
+                </Text>
+                <Text style={styles.riskScoreValue}>
+                  {riskLevel === 'High Risk' ? (t?.home?.riskPositive || "POSITIVE") : (t?.home?.riskNegative || "NEGATIVE")}
+                </Text>
+              </View>
+              <View style={styles.riskIconContainer}>
+                 <Brain size={48} color="rgba(255,255,255,0.4)" strokeWidth={1.5} />
+              </View>
             </View>
 
-            <View style={{ height: 1.5, backgroundColor: 'rgba(255,255,255,0.2)', width: '40%', marginBottom: 12 }} />
-
-            <Text style={[styles.riskDescription, themed.riskDescription, { color: 'rgba(255,255,255,0.95)', fontSize: scale(13), lineHeight: scale(18) }]} numberOfLines={2}>
-              {!isUnchanged
-                ? (t.prediction?.factorsDesc || "Health metrics updated. Run new analysis for accuracy.")
-                : (riskLevel === 'Low Risk' ? t.prediction?.lowRiskDesc : t.prediction?.highRiskDesc)}
-            </Text>
+            <View style={styles.riskFooter}>
+              <Text style={styles.riskFooterText}>
+                {!isUnchanged
+                  ? "Biometrics updated. Run a fresh scan for precise results."
+                  : (riskLevel === 'Low Risk' ? t.prediction?.lowRiskDesc : t.prediction?.highRiskDesc)}
+              </Text>
+              <ChevronRight size={20} color="rgba(255,255,255,0.8)" />
+            </View>
           </LinearGradient>
         </TouchableOpacity>
 
         {isGoogleFitConnected && (
-          <>
-            {/* 🛡️ Metabolic Synergy Widget */}
-            <TouchableOpacity
-              style={[styles.synergyWidget, { backgroundColor: colors.card, shadowColor: colors.cardShadow }]}
+          <View style={styles.synergyContainer}>
+             <TouchableOpacity
+              style={styles.synergyCard}
               activeOpacity={0.8}
               onPress={() => router.push('/progress-impact' as any)}
             >
-              <View style={[styles.synergyIconBox, { backgroundColor: '#E8F5E9', width: themed.iconM, height: themed.iconM, borderRadius: themed.iconM / 3 }]}>
-                <ShieldCheck size={themed.iconS} color="#2E7D32" />
+              <View style={[styles.synergyIcon, { backgroundColor: '#F0FDF4' }]}>
+                <ShieldCheck size={24} color="#10B981" />
               </View>
-              <View style={styles.synergyInfo}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={[styles.synergyTitle, { color: colors.text }]}>Metabolic Synergy</Text>
-                  {healthMetrics.steps >= 8000 && (
-                    <View style={styles.activeMitigationBadge}>
-                      <Zap size={10} color="#FFF" />
-                      <Text style={styles.activeMitigationText}>ACTIVE</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={[styles.synergyDesc, { color: colors.textSecondary }]}>
+              <View style={styles.synergyText}>
+                <Text style={styles.synergyTitleText}>Metabolic Mitigation</Text>
+                <Text style={styles.synergyDescText}>
                   {healthMetrics.steps >= 8000
-                    ? "Steps threshold met! Mitigating risk by 7.5%."
-                    : "Reach 8,000 steps to activate metabolic synergy."}
+                    ? "Active: Reducing diabetic risk factors."
+                    : "Walk 8k steps to activate protection."}
                 </Text>
               </View>
-              <ChevronRight size={20} color={colors.textLight} />
-            </TouchableOpacity>
-
-            {/* 📋 Daily Metabolic Recap Entry */}
-            <TouchableOpacity
-              style={[styles.synergyWidget, { backgroundColor: colors.card, shadowColor: colors.cardShadow, marginTop: 12 }]}
-              activeOpacity={0.8}
-              onPress={() => router.push('/daily-recap' as any)}
-            >
-              <View style={[styles.synergyIconBox, { backgroundColor: colors.primary + '15' }]}>
-                <BarChart3 size={24} color={colors.primary} />
+              <View style={styles.synergyStatus}>
+                <View style={[styles.statusIndicator, { backgroundColor: healthMetrics.steps >= 8000 ? '#10B981' : '#CBD5E1' }]} />
               </View>
-              <View style={styles.synergyInfo}>
-                <Text style={[styles.synergyTitle, { color: colors.text }]}>Daily Metabolic Report</Text>
-                <Text style={[styles.synergyDesc, { color: colors.textSecondary }]}>
-                  View your personalized "Good vs Bad" metabolic audit.
-                </Text>
-              </View>
-              <ChevronRight size={20} color={colors.textLight} />
             </TouchableOpacity>
-          </>
+          </View>
         )}
 
-        {isGoogleFitConnected && (
+        {/* Metabolic Pulse Section (Gated by Google Fit) */}
+        {!isGoogleFitConnected ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.home.todayProgress}</Text>
-              <TouchableOpacity onPress={() => router.push('/progress' as any)}>
-                <Text style={[styles.sectionLink, themed.sectionLink, { color: colors.primary }]}>{t.common.viewAll}</Text>
+              <Text style={styles.sectionHeading}>Metabolic Pulse</Text>
+            </View>
+            <TouchableOpacity 
+              activeOpacity={0.9} 
+              onPress={connectGoogleFit}
+              style={styles.connectPromoCard}
+            >
+              <LinearGradient 
+                colors={['#00B4D8', '#0077B6']} 
+                style={styles.connectPromoGradient}
+                start={{x:0, y:0}} end={{x:1, y:1}}
+              >
+                <View style={styles.promoContent}>
+                  <View style={styles.promoIconCircle}>
+                    <Link size={24} color="#00B4D8" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.promoTitle}>Unlock Real-time Metrics</Text>
+                    <Text style={styles.promoDesc}>Connect Google Fit to sync your steps, sleep, and metabolic activity automatically.</Text>
+                  </View>
+                  <ChevronRight size={20} color="#FFF" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeading}>Metabolic Pulse</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/wellness' as any)}>
+                <Text style={styles.viewMoreText}>{t.common.viewAll}</Text>
               </TouchableOpacity>
             </View>
-
-            <View style={styles.statsGrid}>
-              {quickStats.map((stat, index) => {
-                const progress = Math.min((stat.value / stat.goal) * 100, 100);
-                const Icon = stat.icon;
-
+            <View style={styles.pulseGrid}>
+              {[
+                { label: 'Steps', value: healthMetrics.steps, goal: dailyGoals.steps, icon: Activity, colors: ['#FFB700', '#FF8E00'], unit: 'steps' },
+                { label: 'Calories', value: Math.round(todayNutrition.calories || 0), goal: dailyGoals.calories, icon: Flame, colors: ['#FF512F', '#DD2476'], unit: 'kcal' },
+                { label: 'Sleep', value: healthMetrics.sleep, goal: dailyGoals.sleep, icon: Moon, colors: ['#8E2DE2', '#4A00E0'], unit: 'hrs' },
+                { label: 'Water', value: healthMetrics.water, goal: dailyGoals.water, icon: Droplet, colors: ['#00B4DB', '#0083B0'], unit: 'gls' },
+              ].map((item, idx) => {
+                const progress = Math.min((item.value / (item.goal || 1)) * 100, 100);
                 return (
-                  <TouchableOpacity
-                    key={index}
-                    activeOpacity={0.8}
-                    style={[styles.statCard, themed.card, { borderColor: stat.color + '15', borderWidth: 1 }]}
-                  >
-                    <View style={styles.statHeader}>
-                      <View style={[styles.statIconContainer, { backgroundColor: stat.color + '15' }]}>
-                        <Icon size={22} color={stat.color} strokeWidth={2.5} />
+                  <View key={idx} style={styles.pulseCard}>
+                    <LinearGradient colors={item.colors as any} style={styles.pulseGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                      <View style={styles.pulseIconBox}>
+                        <item.icon size={18} color="#FFF" />
                       </View>
-                      <View style={[styles.progressBadge, { backgroundColor: stat.color + '10' }]}>
-                        <Text style={[styles.progressBadgeText, { color: stat.color }]}>
-                          {Math.round(progress)}%
-                        </Text>
+                      <Text style={styles.pulseValue}>{item.value}</Text>
+                      <Text style={styles.pulseLabel}>{item.label}</Text>
+                      <View style={styles.pulseProgressBar}>
+                        <View style={[styles.pulseProgressFill, { width: `${progress}%` }]} />
                       </View>
-                    </View>
-                    <View style={styles.statBody}>
-                      <Text style={[styles.statValue, themed.statValue]}>
-                        {stat.value}
-                        {stat.unit && <Text style={[styles.statUnit, themed.statUnit]}> {stat.unit}</Text>}
-                      </Text>
-                      <Text style={[styles.statLabel, themed.statLabel]}>{stat.label}</Text>
-                    </View>
-
-                    <View style={styles.statFooter}>
-                      <View style={[styles.progressBar, { backgroundColor: colors.backgroundTertiary }]}>
-                        <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: stat.color }]} />
-                      </View>
-                      <Text style={[styles.statGoal, themed.statGoal]}>{t.common.goal}: {stat.goal}</Text>
-                    </View>
-                  </TouchableOpacity>
+                    </LinearGradient>
+                  </View>
                 );
               })}
             </View>
           </View>
         )}
 
-        {!isGoogleFitConnected && (
-          <View style={styles.section}>
-            <TouchableOpacity
-              style={[styles.googleFitCard, { shadowColor: colors.cardShadow, marginHorizontal: themed.padL }]}
-              activeOpacity={0.8}
-              onPress={connectGoogleFit}
-            >
+        {/* Daily Bio-Insight Section (Gated) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeading}>Daily Bio-Insight</Text>
+          {!isGoogleFitConnected ? (
+            <View style={[styles.reportCard, { backgroundColor: '#F8FAFC', paddingVertical: 30 }]}>
+               <View style={{ alignItems: 'center', opacity: 0.6 }}>
+                  <ShieldCheck size={40} color="#94A3B8" strokeWidth={1.5} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#64748B', marginTop: 10 }}>Analysis Locked</Text>
+                  <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 4 }}>Sync health data to unlock insights</Text>
+               </View>
+            </View>
+          ) : (
+            <View style={styles.reportCard}>
               <LinearGradient
-                colors={colors.gradient.primary as any}
-                style={styles.googleFitGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+                colors={['#FFFFFF', '#F8FAFC']}
+                style={styles.reportGradient}
               >
-                <View style={styles.googleFitContent}>
-                  <View style={[styles.googleFitIconContainer, { width: themed.iconM, height: themed.iconM, borderRadius: themed.iconM / 2.5 }]}>
-                    <Link size={themed.iconS} color={colors.textWhite} strokeWidth={2} />
+                <View style={styles.reportHeader}>
+                  <View style={[styles.reportIconBox, { backgroundColor: '#10B981' + '15' }]}>
+                    <BarChart3 size={24} color="#10B981" />
                   </View>
-                  <View style={styles.googleFitTextContainer}>
-                    <Text style={[styles.googleFitTitle, themed.googleFitTitle, { color: colors.textWhite }]}>{t.home.googleFit}</Text>
-                    <Text style={[styles.googleFitDescription, themed.googleFitDescription, { color: colors.textWhite }]}>
-                      {t.wellness.keepTracking}
-                    </Text>
+                  <View style={styles.reportHeaderText}>
+                    <Text style={styles.reportTitle}>Clinical Daily Summary</Text>
+                    <Text style={styles.reportDate}>{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</Text>
                   </View>
                 </View>
+                
+                <View style={styles.reportDivider} />
+                
+                <View style={styles.reportGrid}>
+                  <View style={styles.reportItem}>
+                    <Text style={styles.reportItemVal}>{healthMetrics.steps >= dailyGoals.steps ? 'Optimal' : 'Active'}</Text>
+                    <Text style={styles.reportItemLabel}>Activity Level</Text>
+                  </View>
+                  <View style={styles.reportItem}>
+                    <Text style={styles.reportItemVal}>{todayNutrition.calories > 0 ? (todayNutrition.calories < 2500 ? 'Stable' : 'Elevated') : 'Awaiting Data'}</Text>
+                    <Text style={styles.reportItemLabel}>Metabolic Load</Text>
+                  </View>
+                  <View style={styles.reportItem}>
+                    <Text style={styles.reportItemVal}>{healthMetrics.water >= 6 ? 'Hydrated' : 'Low'}</Text>
+                    <Text style={styles.reportItemLabel}>Hydration</Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity 
+                  style={styles.reportAction}
+                  onPress={() => router.push('/daily-report' as any)}
+                >
+                  <Text style={styles.reportActionText}>View Detailed Bio-Analysis</Text>
+                  <ChevronRight size={18} color="#10B981" />
+                </TouchableOpacity>
               </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        )}
+            </View>
+          )}
+        </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.home.quickActions}</Text>
-          <View style={styles.featuresGrid}>
+          <Text style={styles.sectionHeading}>{t.home.quickActions}</Text>
+          <View style={styles.grid}>
             {features.map((feature, index) => {
               const Icon = feature.icon;
               return (
                 <TouchableOpacity
                   key={index}
-                  style={[styles.featureCard, { shadowColor: feature.gradient[0] }]}
+                  style={styles.gridCard}
                   activeOpacity={0.9}
                   onPress={() => router.push(feature.route as any)}
                 >
                   <LinearGradient
                     colors={feature.gradient as any}
-                    style={styles.featureGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
+                    style={styles.gridGradient}
                   >
-                    {/* Decorative Background Element */}
-                    <View style={styles.featureDecorator} />
-                    <View style={styles.featureGlass} />
-
-                    <View style={styles.featureHeader}>
-                      <View style={styles.iconCircle}>
-                        <Icon size={26} color={feature.gradient[0]} strokeWidth={2.5} />
-                      </View>
-                      <View style={styles.actionArrow}>
-                        <ChevronRight size={16} color="#FFFFFF" strokeWidth={3} />
-                      </View>
+                    <View style={styles.gridGlass} />
+                    <View style={styles.gridIconBox}>
+                      <Icon size={24} color="#FFF" strokeWidth={2.5} />
                     </View>
-
-                    <View style={styles.featureInfo}>
-                      <Text style={styles.featureLabelInside} numberOfLines={2}>
-                        {feature.label}
-                      </Text>
-                      <View style={styles.featureStatus}>
-                        <View style={styles.statusDot} />
-                        <Text style={styles.statusText}>Active</Text>
-                      </View>
+                    <Text style={styles.gridLabel}>{feature.label}</Text>
+                    <View style={styles.gridFooter}>
+                       <View style={styles.activeDot} />
+                       <Text style={styles.activeText}>OPTIMIZED</Text>
                     </View>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -469,74 +453,52 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.home.rewardsSummary}</Text>
-            <Trophy size={20} color="#FF9500" />
+          <View style={styles.rewardSectionHeader}>
+             <Text style={styles.sectionHeading}>{t.home.rewardsSummary}</Text>
+             <TouchableOpacity onPress={() => router.push('/(tabs)/rewards' as any)}>
+                <Text style={styles.viewMoreText}>{t.common.viewAll}</Text>
+             </TouchableOpacity>
           </View>
-          <View style={[styles.rewardsCard, themed.card]}>
-            <View style={styles.rewardsRow}>
-              <View style={styles.rewardItem}>
-                <View style={[styles.rewardIconContainer, { backgroundColor: colors.primary + '15' }]}>
-                  <Medal size={20} color={colors.primary} />
-                </View>
-                <Text style={[styles.rewardValue, themed.rewardValue, { color: colors.primary }]}>{rewardsPoints}</Text>
-                <Text style={[styles.rewardLabel, themed.rewardLabel]}>{t.home.points}</Text>
-              </View>
-              <View style={styles.rewardDivider} />
-              <View style={styles.rewardItem}>
-                <View style={[styles.rewardIconContainer, { backgroundColor: '#FF9500' + '15' }]}>
-                  <Flame size={20} color="#FF9500" />
-                </View>
-                <Text style={[styles.rewardValue, themed.rewardValue, { color: '#FF9500' }]}>{streak}</Text>
-                <Text style={[styles.rewardLabel, themed.rewardLabel]}>{t.home.streak}</Text>
-              </View>
-              <View style={styles.rewardDivider} />
-              <View style={styles.rewardItem}>
-                <View style={[styles.rewardIconContainer, { backgroundColor: '#4CAF50' + '15' }]}>
-                  <ShieldCheck size={20} color="#4CAF50" />
-                </View>
-                <Text style={[styles.rewardValue, themed.rewardValue, { color: '#4CAF50' }]}>{unlockedBadges.length}</Text>
-                <Text style={[styles.rewardLabel, themed.rewardLabel]}>{t.home.badges}</Text>
-              </View>
+          <View style={styles.rewardsPlate}>
+            <View style={styles.rewardStat}>
+               <Trophy size={20} color="#F59E0B" />
+               <Text style={styles.rewardStatVal}>{rewardsPoints}</Text>
+               <Text style={styles.rewardStatLabel}>{t.home.points}</Text>
             </View>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => router.push('/(tabs)/rewards' as any)}
-            >
-              <LinearGradient
-                colors={['#00B4D8', '#0077B6']}
-                style={styles.rewardsButton}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <Text style={styles.rewardsButtonText}>{t.home.viewRewards}</Text>
-                <ChevronRight size={16} color="#FFFFFF" strokeWidth={3} />
-              </LinearGradient>
-            </TouchableOpacity>
+            <View style={styles.rewardStatDivider} />
+            <View style={styles.rewardStat}>
+               <Zap size={20} color="#F43F5E" />
+               <Text style={styles.rewardStatVal}>{streak}</Text>
+               <Text style={styles.rewardStatLabel}>{t.home.streak}</Text>
+            </View>
+            <View style={styles.rewardStatDivider} />
+            <View style={styles.rewardStat}>
+               <Sparkles size={20} color="#8B5CF6" />
+               <Text style={styles.rewardStatVal}>{unlockedBadges?.length || 0}</Text>
+               <Text style={styles.rewardStatLabel}>{t.home.badges}</Text>
+            </View>
           </View>
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, themed.sectionTitle]}>{t.home.healthTips}</Text>
-            <Sparkles size={20} color={colors.primary} />
-          </View>
-          <View style={[styles.tipCard, themed.card]}>
-            <View style={styles.tipAccent} />
-            <View style={styles.tipContent}>
-              <View style={styles.tipHeader}>
-                <View style={styles.tipIconContainer}>
-                  <TrendingUp size={20} color={colors.primary} />
+        <View style={[styles.section, { marginBottom: 40 }]}>
+           <Text style={styles.sectionHeading}>{t.home.healthTips}</Text>
+           <View style={styles.tipBox}>
+              <LinearGradient
+                colors={['#FFFFFF', '#F8FAFC']}
+                style={styles.tipGradient}
+              >
+                <View style={styles.tipIconBox}>
+                   <Sparkles size={20} color="#10B981" />
                 </View>
-                <Text style={[styles.tipTitle, themed.tipTitle]}>{t.home.tipStayHydrated}</Text>
-              </View>
-              <Text style={[styles.tipDescription, themed.tipDescription]}>{t.home.tipStayHydratedDesc}</Text>
-            </View>
-          </View>
+                <View style={styles.tipTextContent}>
+                  <Text style={styles.tipTitleText}>{t.home.tipStayHydrated}</Text>
+                  <Text style={styles.tipDescText}>{t.home.tipStayHydratedDesc}</Text>
+                </View>
+              </LinearGradient>
+           </View>
         </View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -548,495 +510,526 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 30,
+    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingHorizontal: 24,
+    marginBottom: 24,
   },
   greeting: {
-    fontWeight: '700' as const,
+    fontSize: 28,
   },
   subtitle: {
-    marginTop: 4,
+    fontSize: 14,
+    marginTop: 2,
   },
-  googleFitCard: {
-    marginHorizontal: 0,
-    borderRadius: 20,
+  profileButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     overflow: 'hidden',
-    ...Platform.select({
-      web: { boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.2)' },
-      native: {
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-        elevation: 6,
-      }
-    }),
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
-  googleFitGradient: {
-    padding: 24,
+  profileGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  googleFitContent: {
+  profileInitial: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  riskCardContainer: {
+    marginHorizontal: 24,
+    borderRadius: 32,
+    overflow: 'hidden',
+    elevation: 8,
+    shadowColor: '#F43F5E',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+  },
+  riskCardGradient: {
+    padding: 28,
+    minHeight: 220,
+    justifyContent: 'space-between',
+  },
+  riskCardGlass: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  riskCardHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  googleFitIconContainer: {
+  aiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  aiBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  updateBadge: {
+    backgroundColor: '#FFF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  updateBadgeText: {
+    color: '#F43F5E',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  riskMainContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  riskScoreWrapper: {
+    flex: 1,
+  },
+  riskScoreTitle: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  riskScoreValue: {
+    color: '#FFF',
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  riskIconContainer: {
     width: 64,
     height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  riskFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    marginHorizontal: -28,
+    marginBottom: -28,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
+  },
+  riskFooterText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 12,
+  },
+  synergyContainer: {
+    paddingHorizontal: 24,
+    marginTop: 20,
+  },
+  synergyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderRadius: 24,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+  },
+  synergyIcon: {
+    width: 52,
+    height: 52,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
   },
-  googleFitTextContainer: {
+  synergyText: {
     flex: 1,
   },
-  googleFitTitle: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: '#ffffff',
-    marginBottom: 8,
+  synergyTitleText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 2,
   },
-  googleFitDescription: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    lineHeight: 20,
+  synergyDescText: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
   },
-  riskCard: {
-    marginHorizontal: 20,
+  synergyStatus: {
+    marginLeft: 12,
+  },
+  statusIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  connectCard: {
+    marginHorizontal: 24,
     marginTop: 20,
-    borderRadius: 20,
+    borderRadius: 24,
     overflow: 'hidden',
-    ...Platform.select({
-      web: { boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.2)' },
-      native: {
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-        elevation: 6,
-      }
-    }),
   },
-  riskGradient: {
-    padding: 24,
+  connectGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
   },
-  riskHeader: {
+  connectIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  connectInfo: {
+    flex: 1,
+  },
+  connectTitle: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  connectSubtitle: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+  },
+  connectAction: {
+    backgroundColor: '#FFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  connectActionText: {
+    color: '#2563EB',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  section: {
+    marginTop: 32,
+    paddingHorizontal: 24,
+  },
+  sectionHeading: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 16,
+    letterSpacing: -0.5,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  gridCard: {
+    width: (width - 64) / 2,
+    height: (width - 64) / 2,
+    borderRadius: 28,
+    overflow: 'hidden',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+  },
+  gridGradient: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'space-between',
+  },
+  gridGlass: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  gridIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridLabel: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 22,
+    letterSpacing: -0.5,
+  },
+  gridFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFF',
+    opacity: 0.8,
+  },
+  activeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+    opacity: 0.8,
+  },
+  rewardSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  viewMoreText: {
+    color: '#10B981',
+    fontWeight: '700',
+    fontSize: 14,
     marginBottom: 16,
   },
-  riskBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+  rewardsPlate: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    borderRadius: 28,
+    padding: 24,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
   },
-  riskBadgeText: {
+  rewardStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  rewardStatVal: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginVertical: 4,
+  },
+  rewardStatLabel: {
     fontSize: 12,
-    fontWeight: '700' as const,
-    color: '#ffffff',
+    fontWeight: '600',
+    color: '#64748B',
   },
-  riskScore: {
-    fontSize: 48,
-    fontWeight: '700' as const,
-    color: '#ffffff',
+  rewardStatDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: '#E2E8F0',
+  },
+  tipBox: {
+    borderRadius: 28,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+  },
+  tipGradient: {
+    flexDirection: 'row',
+    padding: 20,
+    alignItems: 'center',
+  },
+  tipIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  tipTextContent: {
+    flex: 1,
+  },
+  tipTitleText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
     marginBottom: 4,
   },
-  riskLabel: {
-    fontSize: 16,
-    color: '#ffffff',
-    opacity: 0.9,
-    marginBottom: 12,
-  },
-  riskDescription: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.8,
-    lineHeight: 20,
-  },
-  section: {
-    marginTop: 24,
-    paddingHorizontal: 20,
+  tipDescText: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
-  sectionTitle: {
-    fontWeight: '700' as const,
+  pulseContainer: {
+    paddingRight: 24,
+    paddingBottom: 8,
   },
-  sectionLink: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: '#007AFF', // Use a default since this is static, or can be dynamic via themed
-  },
-  statsGrid: {
+  pulseGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
     justifyContent: 'space-between',
   },
-  statCard: {
-    width: CARD_WIDTH,
-    borderRadius: 20,
-    padding: 16,
+  pulseCard: {
+    width: (width - 48 - 12) / 2, // 24 padding each side + 12 gap
+    height: 145,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#FFF',
+    elevation: 4,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.05,
     shadowRadius: 12,
-    elevation: 2,
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    minHeight: 165,
   },
-  statHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  statIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  progressBadgeText: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-  },
-  statBody: {
+  pulseGradient: {
     flex: 1,
-    justifyContent: 'flex-start',
-    marginTop: 4,
-  },
-  statValue: {
-    fontWeight: '800' as const,
-    fontSize: 28,
-  },
-  statUnit: {
-    fontWeight: '600' as const,
-    fontSize: 14,
-    opacity: 0.6,
-  },
-  statLabel: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    opacity: 0.7,
-    marginTop: 2,
-  },
-  statFooter: {
-    marginTop: 12,
-  },
-  progressBar: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  statGoal: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    opacity: 0.5,
-  },
-  featuresGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -8,
-  },
-  featureCard: {
-    width: (width - 56) / 2,
-    margin: 8,
-    borderRadius: 28,
-    overflow: 'hidden',
-    ...Platform.select({
-      web: { boxShadow: '0px 8px 20px rgba(0, 0, 0, 0.15)' },
-      native: {
-        elevation: 10,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.25,
-        shadowRadius: 10,
-      }
-    }),
-  },
-  featureGradient: {
-    padding: 22,
-    aspectRatio: 1,
+    padding: 20,
     justifyContent: 'space-between',
-    position: 'relative',
   },
-  featureDecorator: {
-    position: 'absolute',
-    top: -20,
-    right: -20,
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  featureGlass: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '40%',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderBottomLeftRadius: 100,
-    borderBottomRightRadius: 100,
-    transform: [{ scaleX: 2 }],
-  },
-  featureHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+  pulseIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    ...Platform.select({
-      web: { boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)' },
-      native: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 4,
-      }
-    }),
   },
-  featureInfo: {
-    gap: 6,
-  },
-  featureLabelInside: {
-    fontSize: 18,
+  pulseValue: {
+    fontSize: 24,
     fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-    lineHeight: 22,
+    color: '#FFF',
+    letterSpacing: -1,
   },
-  featureStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    opacity: 0.8,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#FFFFFF',
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  pulseLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.9)',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  actionArrow: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  pulseProgressBar: {
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 2,
+    marginTop: 8,
+    overflow: 'hidden',
   },
-  rewardsCard: {
+  pulseProgressFill: {
+    height: '100%',
+    backgroundColor: '#FFF',
+    borderRadius: 2,
+  },
+  reportCard: {
+    borderRadius: 32,
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 15,
+  },
+  reportGradient: {
     padding: 24,
-    borderRadius: 24,
-    marginBottom: 24,
-    ...Platform.select({
-      web: { boxShadow: '0px 4px 15px rgba(0, 0, 0, 0.05)' },
-      native: {
-        elevation: 3,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.08,
-        shadowRadius: 10,
-      }
-    }),
   },
-  rewardsRow: {
+  reportHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    gap: 16,
   },
-  rewardItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  rewardIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  rewardDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  rewardValue: {
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  rewardLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    opacity: 0.7,
-  },
-  rewardsButton: {
+  reportIconBox: {
+    width: 52,
     height: 52,
     borderRadius: 16,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    ...Platform.select({
-      web: { boxShadow: '0px 4px 12px rgba(0, 180, 216, 0.3)' },
-      native: {
-        elevation: 4,
-        shadowColor: '#00B4D8',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-      }
-    }),
   },
-  rewardsButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  tipCard: {
-    padding: 20,
-    borderRadius: 24,
-    marginBottom: 80,
-    flexDirection: 'row',
-    overflow: 'hidden',
-    ...Platform.select({
-      web: { boxShadow: '0px 4px 15px rgba(0, 0, 0, 0.05)' },
-      native: {
-        elevation: 3,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.08,
-        shadowRadius: 10,
-      }
-    }),
-  },
-  tipAccent: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 6,
-    backgroundColor: '#00B4D8',
-  },
-  tipContent: {
+  reportHeaderText: {
     flex: 1,
   },
-  tipHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 12,
-  },
-  tipIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#00B4D8' + '10',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tipTitle: {
+  reportTitle: {
     fontSize: 18,
     fontWeight: '800',
+    color: '#1E293B',
   },
-  tipDescription: {
-    fontSize: 14,
-    lineHeight: 22,
-    opacity: 0.8,
+  reportDate: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+    marginTop: 2,
   },
-  // --- 🛡️ Synergy Widget Styles ---
-  synergyWidget: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 20,
+  reportDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 20,
+  },
+  reportGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    ...Platform.select({
-      web: {
-        boxShadow: '0px 2px 5px rgba(0, 0, 0, 0.1)',
-      },
-      native: {
-        elevation: 2,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 5,
-      },
-    }),
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  synergyIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  synergyInfo: {
+  reportItem: {
     flex: 1,
-    marginLeft: 16,
-    marginRight: 8,
   },
-  synergyTitle: {
+  reportItemVal: {
     fontSize: 16,
     fontWeight: '800',
+    color: '#1E293B',
   },
-  synergyDesc: {
-    fontSize: 12,
+  reportItemLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '700',
     marginTop: 2,
-    fontWeight: '500',
+    textTransform: 'uppercase',
   },
-  activeMitigationBadge: {
+  reportAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2E7D32',
-
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    gap: 2
+    justifyContent: 'center',
+    backgroundColor: '#F0FDF4',
+    paddingVertical: 14,
+    borderRadius: 16,
+    gap: 8,
   },
-  activeMitigationText: {
-    color: '#FFF',
-    fontSize: 9,
-    fontWeight: '900'
+  reportActionText: {
+    color: '#10B981',
+    fontWeight: '800',
+    fontSize: 14,
   },
+  connectPromoCard: { borderRadius: 24, overflow: 'hidden', elevation: 8, shadowColor: '#00B4D8', shadowOpacity: 0.15, shadowRadius: 15, marginBottom: 12 },
+  connectPromoGradient: { padding: 20 },
+  promoContent: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  promoIconCircle: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
+  promoTitle: { fontSize: 16, fontWeight: '900', color: '#FFF', marginBottom: 4 },
+  promoDesc: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.9)', lineHeight: 18 },
 });
