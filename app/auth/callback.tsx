@@ -1,13 +1,15 @@
 import { useEffect } from 'react';
 import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useHealth } from '@/contexts/HealthContext';;
 import Colors from '@/constants/colors';
 import { useTranslation } from '@/hooks/use-translation';
 
 export default function AuthCallbackScreen() {
   const router = useRouter();
-  const { user, isLoading, hasHealthSetup } = useUser();
+  const { user, isLoading } = useAuth();
+  const { hasHealthSetup } = useHealth();
   const { t } = useTranslation();
 
   useEffect(() => {
