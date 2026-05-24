@@ -1,13 +1,15 @@
+import { secureFetch } from '../lib/apiClient';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Alert, RefreshControl, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Brain, TrendingUp, AlertTriangle, CheckCircle, RefreshCw, Info } from 'lucide-react-native';
-import { useUser } from '@/contexts/UserContext';
+import { ChevronLeft, Brain, TrendingUp, AlertTriangle, CheckCircle, RefreshCw, Info, Camera, Sparkles } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/SettingsContext';
 import { useTranslation } from '@/hooks/use-translation';
-import { DIABETES_URL } from '../constants/Api';
+import { HEALTH_URL, DIABETES_URL } from '../constants/Api';
 
 const AGE_GROUP_LABELS: { [key: string]: string } = {
   '1': '18-24', '2': '25-29', '3': '30-34', '4': '35-39',
@@ -44,16 +46,19 @@ type PredictionData = {
     weight?: number;
   };
   mainReasons?: string[];
+  mode?: 'LIFESTYLE' | 'CLINICAL';
+  confidenceScore?: number;
 };
 
 export default function PredictionScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, ensureAccessToken } = useUser();
+  const { user, ensureAccessToken, updateUser } = useAuth();
   const { colors, scale } = useTheme();
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
   const [data, setData] = useState<PredictionData | null>(null);
 
   // Dynamic Styles
@@ -79,12 +84,31 @@ export default function PredictionScreen() {
   // Helper to extract health values from user object (handles nesting in healthData)
   const getHealthVal = useCallback((userObj: any, key: string, fallbackKey?: string) => {
     if (!userObj) return undefined;
-    if (userObj[key] !== undefined) return userObj[key];
-    if (userObj.healthData && userObj.healthData[key] !== undefined) return userObj.healthData[key];
+    
+    // Check root and healthData, prioritizing non-zero values for metrics that should be positive
+    const valAtRoot = userObj[key];
+    const valInHealthData = userObj.healthData?.[key];
+    
+    // If it's height/weight/bmi/age, zero or "0" is usually a placeholder/unset value
+    const isMetric = ['height', 'weight', 'bmi', 'age', 'glucose', 'bloodGlucoseEstimated', 'hba1cEstimated'].includes(key);
+    
+    const isValid = (v: any) => {
+      if (v === undefined || v === null || v === '' || v === 'null') return false;
+      if (isMetric && Number(v) <= 0) return false;
+      return true;
+    };
+
+    if (isValid(valAtRoot)) return valAtRoot;
+    if (isValid(valInHealthData)) return valInHealthData;
+
     if (fallbackKey) {
-      if (userObj[fallbackKey] !== undefined) return userObj[fallbackKey];
-      if (userObj.healthData && userObj.healthData[fallbackKey] !== undefined) return userObj.healthData[fallbackKey];
+      const fbAtRoot = userObj[fallbackKey];
+      const fbInHealthData = userObj.healthData?.[fallbackKey];
+      
+      if (isValid(fbAtRoot)) return fbAtRoot;
+      if (isValid(fbInHealthData)) return fbInHealthData;
     }
+    
     return undefined;
   }, []);
 
@@ -92,23 +116,32 @@ export default function PredictionScreen() {
   const currentHealth = useMemo(() => {
     if (!user) return null;
     const anyUser = user as any;
+    
+    // Explicitly parse everything as floats to avoid comparison issues
+    const safeNum = (val: any) => {
+      const n = parseFloat(val);
+      return isNaN(n) ? 0 : n;
+    };
+
     return {
-      age: Number(getHealthVal(anyUser, 'age') || 5),
-      sex: Number(getHealthVal(anyUser, 'sex') || 0),
-      height: Number(getHealthVal(anyUser, 'height') || 0),
-      weight: Number(getHealthVal(anyUser, 'weight') || 0),
-      bmi: Number(getHealthVal(anyUser, 'bmi') || 0),
-      highBP: Number(getHealthVal(anyUser, 'highBP') || 0),
-      highChol: Number(getHealthVal(anyUser, 'highChol') || 0),
-      smoker: Number(getHealthVal(anyUser, 'smoker') || 0),
-      physActivity: Number(getHealthVal(anyUser, 'physActivity') || 0),
-      genHlth: Number(getHealthVal(anyUser, 'genHlth') || 3),
-      heartDiseaseOrAttack: Number(getHealthVal(anyUser, 'heartDiseaseOrAttack') || 0),
-      pregnancies: Number(getHealthVal(anyUser, 'pregnancies') || 0),
-      hba1cEstimated: Number(getHealthVal(anyUser, 'hba1cEstimated', 'hba1c') || 0),
-      bloodGlucoseEstimated: Number(getHealthVal(anyUser, 'bloodGlucoseEstimated', 'glucose') || 0)
+      age: safeNum(getHealthVal(anyUser, 'age') || 5),
+      sex: safeNum(getHealthVal(anyUser, 'sex') || 0),
+      height: safeNum(getHealthVal(anyUser, 'height') || 0),
+      weight: safeNum(getHealthVal(anyUser, 'weight') || 0),
+      bmi: safeNum(getHealthVal(anyUser, 'bmi') || 0),
+      highBP: safeNum(getHealthVal(anyUser, 'highBP') || 0),
+      highChol: safeNum(getHealthVal(anyUser, 'highChol') || 0),
+      smoker: safeNum(getHealthVal(anyUser, 'smoker') || 0),
+      physActivity: safeNum(getHealthVal(anyUser, 'physActivity') || 0),
+      genHlth: safeNum(getHealthVal(anyUser, 'genHlth') || 3),
+      heartDiseaseOrAttack: safeNum(getHealthVal(anyUser, 'heartDiseaseOrAttack') || 0),
+      pregnancies: safeNum(getHealthVal(anyUser, 'pregnancies') || 0),
+      hba1cEstimated: getHealthVal(anyUser, 'hba1cEstimated', 'hba1c') ? safeNum(getHealthVal(anyUser, 'hba1cEstimated', 'hba1c')) : null,
+      bloodGlucoseEstimated: getHealthVal(anyUser, 'bloodGlucoseEstimated', 'glucose') ? safeNum(getHealthVal(anyUser, 'bloodGlucoseEstimated', 'glucose')) : null
     };
   }, [user, getHealthVal]);
+
+  const hasClinicalData = currentHealth?.hba1cEstimated !== null && currentHealth?.bloodGlucoseEstimated !== null;
 
   const fetchingRef = useRef(false);
 
@@ -122,21 +155,13 @@ export default function PredictionScreen() {
 
       if (retryLimit === 1) setLoading(true);
 
-      let token = await ensureAccessToken();
-      const response = await fetch(`${DIABETES_URL}/latest`, {
-        headers: {
-          'Authorization': `Bearer ${token || ''}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await secureFetch(`${DIABETES_URL}/latest`);
 
       if (response.status === 401 && retryLimit > 0) {
         if (__DEV__) console.warn("🔄 [Prediction] 401 Unauthorized - forcing token refresh and retrying fetch...");
-        token = await ensureAccessToken(true); // Force refresh
-        if (token) {
-          fetchingRef.current = false;
-          return fetchPrediction(retryLimit - 1);
-        }
+        await ensureAccessToken(true); // Force refresh
+        fetchingRef.current = false;
+        return fetchPrediction(retryLimit - 1);
       }
 
       if (!response.ok) {
@@ -156,48 +181,43 @@ export default function PredictionScreen() {
     }
   }, [user?.id, user?.email, ensureAccessToken]);
 
-  const runPrediction = async (retryLimit = 1): Promise<void> => {
+  const runPrediction = async (retryLimit = 1, manualPayload?: any): Promise<void> => {
     if (retryLimit === 1) setAnalyzing(true);
     try {
-      if (!user || !currentHealth) return;
+      const payload = manualPayload || currentHealth;
+      if (!user || !payload) return;
 
-      const payload = {
-        ...currentHealth,
+      const requestPayload = {
+        ...payload,
         // Add aliases for backend/ML script if needed
-        glucose: currentHealth.bloodGlucoseEstimated,
-        hba1c: currentHealth.hba1cEstimated
+        glucose: payload.bloodGlucoseEstimated,
+        hba1c: payload.hba1cEstimated
       };
 
       if (__DEV__) console.log(`🚀 [Prediction] Sending Prediction Payload (Attempt: ${2 - retryLimit}):`, payload);
 
-      let token = await ensureAccessToken();
-      if (!token) return;
-
-      const response = await fetch(`${DIABETES_URL}/predict`, {
+      const res = await secureFetch(`${DIABETES_URL}/predict`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(requestPayload),
       });
 
-      if (response.status === 401 && retryLimit > 0) {
+      if (res.status === 401 && retryLimit > 0) {
         if (__DEV__) console.warn("🚀 [Prediction] 401 Unauthorized - forcing token refresh and retrying predict...");
-        token = await ensureAccessToken(true); // Force refresh
-        if (token) {
-          return runPrediction(retryLimit - 1);
-        }
+        await ensureAccessToken(true); // Force refresh
+        return runPrediction(retryLimit - 1);
       }
 
-      if (!response.ok) {
-        if (__DEV__) console.warn(`🚀 [Prediction] Predict failed with status ${response.status}`);
-        const errorJson = await response.json().catch(() => ({}));
+      if (!res.ok) {
+        if (__DEV__) console.warn(`🚀 [Prediction] Predict failed with status ${res.status}`);
+        const errorJson = await res.json().catch(() => ({}));
         Alert.alert(t.prediction.analysisFailed, errorJson.message || 'Could not complete prediction.');
         return;
       }
 
-      const json = await response.json();
+      const json = await res.json();
       if (json.success) {
         setData(json);
         Alert.alert(t.prediction.analysisComplete, 'Your health metrics have been analyzed.');
@@ -209,6 +229,119 @@ export default function PredictionScreen() {
       Alert.alert(t.prediction.connectionError, 'Failed to reach the analysis server. Please check your connection.');
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleScanReport = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission required', 'Allow access to photos to scan reports.');
+        return;
+      }
+      
+      const result = await ImagePicker.launchImageLibraryAsync({ 
+        mediaTypes: ImagePicker.MediaTypeOptions.Images, 
+        allowsEditing: true, 
+        quality: 0.4, 
+        base64: true 
+      });
+      
+      if (result.canceled) return;
+
+      setIsScanning(true);
+      const response = await secureFetch(`${HEALTH_URL}/scan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ imageBase64: result.assets[0].base64 }),
+      });
+      
+      const json = await response.json();
+
+      if (json.success && json.data) {
+        // Prepare data for update - process ALL possible fields from the AI scan with safety checks
+        const updatePayload: any = {};
+        const fields = ['age', 'weight', 'height', 'sex', 'highBP', 'highChol', 'genHlth', 'hba1cEstimated', 'bloodGlucoseEstimated'];
+        
+        // Define 'dataFromAI' with type safety
+        const dataFromAI: Record<string, any> = json.data || {};
+        
+        fields.forEach(field => {
+          const rawValue = dataFromAI[field];
+          if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
+            const cleanedValue = String(rawValue).replace(/[^\d.]/g, '');
+            
+            if (cleanedValue !== '') {
+              let processedValue = parseFloat(cleanedValue);
+              
+              // CRITICAL: Map actual age (e.g. 23) to age category index (1-13) if field is 'age'
+              if (field === 'age' && processedValue > 13) {
+                const rawAge = Math.round(processedValue);
+                if (rawAge >= 80) processedValue = 13;
+                else if (rawAge >= 75) processedValue = 12;
+                else if (rawAge >= 70) processedValue = 11;
+                else if (rawAge >= 65) processedValue = 10;
+                else if (rawAge >= 60) processedValue = 9;
+                else if (rawAge >= 55) processedValue = 8;
+                else if (rawAge >= 50) processedValue = 7;
+                else if (rawAge >= 45) processedValue = 6;
+                else if (rawAge >= 40) processedValue = 5;
+                else if (rawAge >= 35) processedValue = 4;
+                else if (rawAge >= 30) processedValue = 3;
+                else if (rawAge >= 25) processedValue = 2;
+                else processedValue = 1;
+              }
+
+              updatePayload[field] = (field === 'sex' || field === 'highBP' || field === 'highChol' || field === 'genHlth' || field === 'age') 
+                ? Math.round(processedValue) 
+                : processedValue;
+            }
+          }
+        });
+        
+        // If we found ANY clinical or health data, update the record
+        if (Object.keys(updatePayload).length > 0) {
+           // IMPORTANT: Merge with current health data to satisfy backend validation
+           // MERGE and SANITIZE the payload
+                       const existingMetrics = { ...(currentHealth || {}) };
+            ['_id', 'id', 'user', '__v', 'createdAt', 'updatedAt'].forEach(k => delete (existingMetrics as any)[k]);
+
+           
+           const fullPayload = {
+             ...existingMetrics,
+             ...updatePayload
+           };
+
+           const res = await secureFetch(HEALTH_URL, {
+             method: 'POST',
+             headers: {
+               'Content-Type': 'application/json',
+             },
+             body: JSON.stringify(fullPayload)
+           });
+           
+           if (res.ok) {
+             const updatedUserJson = await res.json();
+             // IMPORTANT: Sync local state so runPrediction uses the NEW lab values
+             if (updatedUserJson.success) {
+                await updateUser(updatedUserJson.user);
+             }
+           }
+           
+           // Trigger a fresh prediction with the new clinical data IMMEDIATELY
+           Alert.alert('Scan Successful', 'Clinical data extracted. Running fresh analysis...');
+           await runPrediction(1, fullPayload);
+        } else {
+           Alert.alert('Scan Result', 'No specific lab values (HbA1c/Glucose) were detected in this image.');
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      Alert.alert("Error", "Could not scan report.");
+    } finally {
+      setIsScanning(false);
     }
   };
 
@@ -302,50 +435,119 @@ export default function PredictionScreen() {
 
       <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 20 }]}>
 
-        {/* Main Score Card */}
-        <LinearGradient
-          colors={[riskColor, riskColor + 'D0'] as any}
-          style={styles.scoreCard}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <View style={[styles.scoreHeader, { flexWrap: 'wrap', gap: 8 }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
-              <Brain size={scale(20)} color="#FFF" strokeWidth={2.5} />
-              <Text style={{ fontSize: scale(10), fontWeight: '900', letterSpacing: 1.2, color: '#FFF', textTransform: 'uppercase', opacity: 0.9, flexShrink: 1 }}>
-                Metabolic Vulnerability Index
+        {/* Main Score Card - Premium Midnight Theme */}
+        <View style={[styles.scoreCard, { backgroundColor: '#0F172A', overflow: 'hidden', padding: 0 }]}>
+           <LinearGradient
+            colors={['rgba(255,255,255,0.05)', 'transparent'] as any}
+            style={StyleSheet.absoluteFill}
+          />
+          
+          {/* Left Risk Glow Accent */}
+          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, backgroundColor: riskColor }} />
+
+          <View style={{ padding: 24 }}>
+            <View style={[styles.scoreHeader, { flexWrap: 'wrap', gap: 8, marginBottom: 15 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
+                <View style={{ backgroundColor: riskColor + '20', padding: 8, borderRadius: 10 }}>
+                  <Brain size={scale(20)} color={riskColor} strokeWidth={2.5} />
+                </View>
+                <View>
+                  <Text style={{ fontSize: scale(10), fontWeight: '900', letterSpacing: 1.5, color: '#94A3B8', textTransform: 'uppercase' }}>
+                    {data?.mode === 'CLINICAL' ? 'Clinical Metabolic Analysis' : 'Lifestyle Risk Estimate'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                    <CheckCircle size={scale(10)} color={colors.primary} />
+                    <Text style={{ fontSize: scale(9), color: colors.primary, fontWeight: '700' }}>{data?.mode === 'CLINICAL' ? 'LEVEL 1 (DATA-DRIVEN)' : 'LEVEL 2 (STATISTICAL)'}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            <View style={{ marginTop: 10, marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                <Text style={[styles.scoreValue, { color: '#FFF', fontSize: scale(36), fontWeight: '900', letterSpacing: -1 }]}>
+                  {data?.prediction === 1 ? 'POSITIVE' : 'NEGATIVE'}
+                </Text>
+                <View style={[styles.badge, { backgroundColor: riskColor + '30', borderColor: riskColor + '50', borderWidth: 1, borderRadius: 8, paddingVertical: 4 }]}>
+                  <Text style={[styles.badgeText, { color: riskColor, fontSize: scale(10), fontWeight: '900' }]}>{tRiskLevel.toUpperCase()}</Text>
+                </View>
+              </View>
+              
+              <Text style={{ color: '#94A3B8', fontSize: scale(14), fontWeight: '600', marginTop: 4 }}>
+                {data?.riskScore !== undefined 
+                  ? `${data.riskScore}% Metabolic Risk Index` 
+                  : `${((data?.probability || 0) * 100).toFixed(1)}% Statistical Risk`
+                }
               </Text>
             </View>
-            <View style={[styles.badge, { alignSelf: 'flex-start' }]}>
-              <Text style={[styles.badgeText, themed.badgeText, { color: '#FFF', fontSize: scale(10) }]}>{tRiskLevel}</Text>
+
+            {/* Confidence Bar - Sleeker */}
+            <View style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: 15, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ color: '#64748B', fontSize: scale(10), fontWeight: '800', letterSpacing: 0.5 }}>CLINICAL DATA CONFIDENCE</Text>
+                  <Text style={{ color: '#FFF', fontSize: scale(10), fontWeight: '900' }}>{Math.round(data?.confidenceScore || 70)}%</Text>
+              </View>
+              <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                  <LinearGradient 
+                    colors={[colors.primary, '#34D399'] as any} 
+                    start={{x:0, y:0}} end={{x:1, y:0}}
+                    style={{ height: '100%', width: `${data?.confidenceScore || 70}%` }} 
+                  />
+              </View>
+            </View>
+
+            <View style={{ marginTop: 20, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+              <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', padding: 8, borderRadius: 8 }}>
+                <Info size={scale(16)} color="#94A3B8" />
+              </View>
+              <Text style={{ color: '#94A3B8', fontSize: scale(12), lineHeight: scale(18), flex: 1, fontWeight: '500' }}>
+                {riskLevel === 'Low Risk'
+                  ? "Your metabolic markers are currently stable. Maintain current physical activity levels."
+                  : "The AI engine detected patterns associated with elevated insulin resistance. Clinical review recommended."}
+              </Text>
+            </View>
+
+            {/* Action Buttons Container */}
+            <View style={{ marginTop: 20, gap: 10 }}>
+               {data?.mode !== 'CLINICAL' && (
+                 <View style={{ backgroundColor: colors.warning + '15', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.warning + '30' }}>
+                   <AlertTriangle size={scale(16)} color={colors.warning} style={{ marginRight: 8 }} />
+                   <Text style={{ color: colors.warning, fontSize: scale(10), fontWeight: '700', flex: 1, lineHeight: scale(14) }}>
+                     {t.prediction.lifestyleWarning || "Lifestyle Estimate. Upload lab reports for Clinical Analysis."}
+                   </Text>
+                 </View>
+               )}
+
+               <TouchableOpacity 
+                 activeOpacity={0.8}
+                 onPress={handleScanReport}
+                 disabled={isScanning}
+                 style={{ 
+                   backgroundColor: data?.mode === 'CLINICAL' ? 'rgba(255,255,255,0.08)' : colors.primary, 
+                   paddingVertical: 14, 
+                   borderRadius: 14, 
+                   flexDirection: 'row', 
+                   alignItems: 'center', 
+                   justifyContent: 'center',
+                   borderWidth: 1,
+                   borderColor: data?.mode === 'CLINICAL' ? 'rgba(255,255,255,0.1)' : colors.primary,
+                 }}
+               >
+                 {isScanning ? (
+                   <ActivityIndicator color="#FFF" size="small" />
+                 ) : (
+                   <>
+                     <Camera size={18} color="#FFF" style={{ marginRight: 8 }} />
+                     <Text style={{ color: '#FFF', fontSize: scale(12), fontWeight: '800', letterSpacing: 1 }}>
+                       {data?.mode === 'CLINICAL' ? 'UPDATE LAB REPORT' : 'SCAN LAB REPORT'}
+                     </Text>
+                     <Sparkles size={14} color="#FFF" style={{ marginLeft: 6, opacity: 0.8 }} />
+                   </>
+                 )}
+               </TouchableOpacity>
             </View>
           </View>
-
-          <View style={{ marginTop: 20, marginBottom: 12 }}>
-            <Text style={[styles.scoreValue, themed.scoreValue, { color: '#FFF', fontSize: scale(28), fontWeight: '900', letterSpacing: -0.5 }]}>
-              {data?.prediction === 1 ? t.home.riskPositive : t.home.riskNegative}
-
-            </Text>
-            <Text style={{ color: '#FFF', fontSize: scale(16), fontWeight: '700', opacity: 0.9, marginTop: 4 }}>
-              {data?.probability !== undefined ? `${(data.probability * 100).toFixed(1)}% Estimated Probability` : `${riskScore}% Probability`}
-            </Text>
-          </View>
-
-          <View style={{ height: 1.5, backgroundColor: 'rgba(255,255,255,0.2)', width: '100%', marginBottom: 16 }} />
-
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            <Info size={scale(16)} color="#FFF" style={{ marginTop: 2, marginRight: 8 }} />
-            <Text style={[styles.scoreDesc, themed.scoreDesc, { color: 'rgba(255,255,255,0.95)', fontSize: scale(13), lineHeight: scale(18), textAlign: 'left', flex: 1 }]}>
-              {riskLevel === 'Low Risk'
-                ? "Your clinical metrics are stable. Focus on maintaining your healthy habits."
-                : "Your metrics indicate an elevated metabolic risk. Please review the diagnostic reasons below."}
-            </Text>
-          </View>
-
-          <Text style={{ color: '#FFD7D7', fontSize: scale(10), fontStyle: 'italic', marginTop: 12, fontWeight: '700', opacity: 0.9 }}>
-            * This is an AI estimation only. Not a medical diagnosis. Consult your doctor.
-          </Text>
-        </LinearGradient>
+        </View>
 
         {/* Main Reasons Section (Explained AI) */}
         {data?.mainReasons && data.mainReasons.length > 0 && (
@@ -432,28 +634,28 @@ export default function PredictionScreen() {
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.bmi}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {(data?.inputData?.bmi ?? currentHealth?.bmi ?? 0).toFixed(1)}
+                {(currentHealth?.bmi || data?.inputData?.bmi || 0).toFixed(1)}
               </Text>
             </View>
             {/* 2. Glucose */}
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.glucoseEst}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {(data?.inputData?.glucose ?? currentHealth?.bloodGlucoseEstimated ?? 0).toFixed(0)}
+                {(currentHealth?.bloodGlucoseEstimated || data?.inputData?.glucose || 0).toFixed(0)}
               </Text>
             </View>
             {/* 3. Blood Pressure */}
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.highBP}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {(data?.inputData?.highBP ?? currentHealth?.highBP) === 1 ? t.prediction.high : t.prediction.normal}
+                {(currentHealth?.highBP ?? data?.inputData?.highBP) === 1 ? t.prediction.high : t.prediction.normal}
               </Text>
             </View>
             {/* 4. Cholesterol */}
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.highChol}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {(data?.inputData?.highChol ?? currentHealth?.highChol) === 1 ? t.prediction.high : t.prediction.normal}
+                {(currentHealth?.highChol ?? data?.inputData?.highChol) === 1 ? t.prediction.high : t.prediction.normal}
               </Text>
             </View>
             {/* 5. Age */}
@@ -461,7 +663,7 @@ export default function PredictionScreen() {
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.age}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
                 {(() => {
-                  const age = data?.inputData?.age ?? currentHealth?.age;
+                  const age = currentHealth?.age || data?.inputData?.age;
                   return age ? (AGE_GROUP_LABELS[age.toString()] || age) : '-';
                 })()}
               </Text>
@@ -470,36 +672,36 @@ export default function PredictionScreen() {
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.heartDisease}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {(data?.inputData?.heartDiseaseOrAttack ?? data?.inputData?.heartDisease ?? currentHealth?.heartDiseaseOrAttack) === 1 ? t.prediction.high : t.prediction.normal}
+                {(currentHealth?.heartDiseaseOrAttack ?? data?.inputData?.heartDiseaseOrAttack ?? data?.inputData?.heartDisease) === 1 ? t.prediction.high : t.prediction.normal}
               </Text>
             </View>
             {/* 7. Smoker */}
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.smoker}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {(data?.inputData?.smoker ?? currentHealth?.smoker) === 1 ? t.prediction.high : t.prediction.normal}
+                {(currentHealth?.smoker ?? data?.inputData?.smoker) === 1 ? t.prediction.high : t.prediction.normal}
               </Text>
             </View>
             {/* 8. Physical Activity */}
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.physActivity}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {(data?.inputData?.physActivity ?? currentHealth?.physActivity) === 1 ? t.prediction.normal : t.prediction.high}
+                {(currentHealth?.physActivity ?? data?.inputData?.physActivity) === 1 ? t.prediction.normal : t.prediction.high}
               </Text>
             </View>
             {/* 9. General Health */}
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.genHlth}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {(data?.inputData?.genHlth ?? currentHealth?.genHlth ?? 3) <= 2 ? t.prediction.normal : t.prediction.high}
+                {(currentHealth?.genHlth ?? data?.inputData?.genHlth ?? 3) <= 2 ? t.prediction.normal : t.prediction.high}
               </Text>
             </View>
             {/* 10. Pregnancies (if female) */}
-            {((data?.inputData?.sex ?? currentHealth?.sex) === 0) && (
+            {((currentHealth?.sex ?? data?.inputData?.sex) === 0) && (
               <View style={[styles.factorItem, themed.factorCard]}>
                 <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.pregnancies}</Text>
                 <Text style={[styles.factorValue, themed.factorValue]}>
-                  {data?.inputData?.pregnancies ?? currentHealth?.pregnancies ?? 0}
+                  {currentHealth?.pregnancies ?? data?.inputData?.pregnancies ?? 0}
                 </Text>
               </View>
             )}
@@ -507,13 +709,13 @@ export default function PredictionScreen() {
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.height} cm</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {data?.inputData?.height ?? currentHealth?.height ?? '-'}
+                {currentHealth?.height || data?.inputData?.height || '-'}
               </Text>
             </View>
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.weight} kg</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {data?.inputData?.weight ?? currentHealth?.weight ?? '-'}
+                {currentHealth?.weight || data?.inputData?.weight || '-'}
               </Text>
             </View>
           </View>
