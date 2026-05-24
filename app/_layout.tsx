@@ -4,6 +4,7 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { LogBox } from "react-native";
+import * as Notifications from "expo-notifications";
 
 LogBox.ignoreLogs([
   '"shadow*" style props are deprecated. Use "boxShadow".',
@@ -11,6 +12,16 @@ LogBox.ignoreLogs([
   'Image: style.resizeMode is deprecated. Please use props.resizeMode.',
   'Error: Cannot pipe to a closed or destroyed stream'
 ]);
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 // 🤫 SHUSH THE TERMINAL
 // Suppress the most annoying terminal warnings that LogBox misses
@@ -41,7 +52,8 @@ if (__DEV__) {
 }
 
 
-import { UserProvider } from "@/contexts/UserContext";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { HealthProvider } from "@/contexts/HealthContext";
 import { AdminProvider } from "@/contexts/AdminContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { MealTrackingProvider } from "@/contexts/MealTrackingContext";
@@ -90,15 +102,17 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <UserProvider>
-          <SettingsProvider>
-            <AdminProvider>
-              <MealTrackingProvider>
-                <RootLayoutNav />
-              </MealTrackingProvider>
-            </AdminProvider>
-          </SettingsProvider>
-        </UserProvider>
+        <AuthProvider>
+          <HealthProvider>
+            <SettingsProvider>
+              <AdminProvider>
+                <MealTrackingProvider>
+                  <RootLayoutNav />
+                </MealTrackingProvider>
+              </AdminProvider>
+            </SettingsProvider>
+          </HealthProvider>
+        </AuthProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
