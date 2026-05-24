@@ -1,3 +1,4 @@
+import { secureFetch as fetch } from '@/lib/apiClient';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
@@ -17,29 +18,14 @@ import { Send, Bot, User as UserIcon, Camera, Image as ImageIcon, X, Sparkles } 
 import * as ImagePicker from 'expo-image-picker';
 import Constants from 'expo-constants';
 import Animated, { FadeInDown, FadeIn, Layout, ZoomIn } from 'react-native-reanimated';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';;
 import { useTheme } from '@/contexts/SettingsContext';
 import { useTranslation } from '@/hooks/use-translation';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
 
-const getApiBaseUrl = () => {
-  const envBase = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL;
-  if (envBase) return envBase.replace(/\/$/, '').replace(/\/api$/, '') + '/api';
-  if (Platform.OS === 'web') return 'http://localhost:5000/api';
-  if (Platform.OS === 'android') {
-    const isEmulator = Constants.deviceName?.includes('sdk') || Constants.deviceName?.includes('emulator') || !Constants.deviceName;
-    if (isEmulator) return 'http://10.0.2.2:5000/api';
-    const appJsonIP = Constants.expoConfig?.extra?.apiHost;
-    if (appJsonIP && appJsonIP !== 'auto-detect') return `http://${appJsonIP}:5000/api`;
-  }
-  if (Platform.OS === 'ios') return 'http://localhost:5000/api';
-  const appJsonIP = Constants.expoConfig?.extra?.apiHost || '192.168.1.136';
-  return `http://${appJsonIP}:5000/api`;
-};
-
-const API_BASE_URL = getApiBaseUrl();
+import { API_BASE_URL } from '@/constants/Api';
 
 type Message = {
   id: string;
@@ -60,7 +46,7 @@ const getQuickReplies = (t: any) => [
 export default function ChatbotScreen() {
   const insets = useSafeAreaInsets();
   const { t, language } = useTranslation();
-  const { user, ensureAccessToken } = useUser();
+  const { user, ensureAccessToken } = useAuth();
   const { colors, scale } = useTheme();
 
   const QUICK_REPLIES = useMemo(() => getQuickReplies(t), [t]);
@@ -133,7 +119,11 @@ export default function ChatbotScreen() {
         const token = await ensureAccessToken();
         const res = await fetch(`${API_BASE_URL}/chatbot`, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          },
           body: formData,
         });
         const data = await res.json();
@@ -215,9 +205,9 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingBottom: 16 },
   headerContent: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, marginTop: 10 },
-  headerIcon: { 
-    width: 60, height: 60, borderRadius: 20, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', 
-    elevation: 4, 
+  headerIcon: {
+    width: 60, height: 60, borderRadius: 20, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center',
+    elevation: 4,
     ...Platform.select({
       web: { boxShadow: '0 4px 12px rgba(0,0,0,0.1)' } as any,
       default: { shadowOpacity: 0.1, shadowRadius: 10, shadowColor: '#000' }
@@ -229,7 +219,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 13, fontWeight: '700', color: '#64748B' },
   messagesContainer: { flex: 1 },
   messagesContent: { padding: 24, paddingBottom: 200 },
-  messageBubble: { 
+  messageBubble: {
     maxWidth: '85%', padding: 16, borderRadius: 24, marginBottom: 16, overflow: 'hidden', elevation: 2,
     ...Platform.select({
       web: { boxShadow: '0 2px 8px rgba(0,0,0,0.05)' } as any,
@@ -245,8 +235,8 @@ const styles = StyleSheet.create({
   quickReplies: { paddingVertical: 12 },
   quickReply: { marginRight: 10, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#FFF', borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
   inputArea: { paddingHorizontal: 16, paddingBottom: 8 },
-  inputWrapper: { 
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 32, padding: 8, elevation: 10, 
+  inputWrapper: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 32, padding: 8, elevation: 10,
     ...Platform.select({
       web: { boxShadow: '0 10px 20px rgba(0,0,0,0.1)' } as any,
       default: { shadowOpacity: 0.1, shadowRadius: 20, shadowColor: '#000' }
