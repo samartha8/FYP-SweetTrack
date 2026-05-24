@@ -1,8 +1,9 @@
+import { secureFetch as fetch } from '@/lib/apiClient';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { User as UserIcon, Mail, Calendar, Ruler, Weight, Heart, Settings, LogOut, ChevronRight } from 'lucide-react-native';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';;
 import { useTheme } from '@/contexts/SettingsContext';
 import { useState, useMemo } from 'react';
 import { useTranslation } from '@/hooks/use-translation';
@@ -16,7 +17,7 @@ import { ShieldCheck, Sparkles } from 'lucide-react-native';
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, logout, ensureAccessToken } = useUser();
+  const { user, logout, ensureAccessToken } = useAuth();
   const { colors, scale } = useTheme();
   const { t } = useTranslation();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -28,7 +29,11 @@ export default function ProfileScreen() {
         try {
           let token = await ensureAccessToken();
           const response = await fetch(`${DIABETES_URL}/latest`, {
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json',
+              'ngrok-skip-browser-warning': 'true'
+            }
           });
 
           if (response.status === 401 && retryLimit > 0) {
