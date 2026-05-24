@@ -1,7 +1,7 @@
 const Colors = {
-  primary: '#00B4D8',
-  primaryDark: '#0077B6',
-  primaryLight: '#90E0EF',
+  primary: '#10B981',
+  primaryDark: '#059669',
+  primaryLight: '#D1FAE5',
 
   secondary: '#2196F3',
   secondaryDark: '#1976D2',
@@ -30,7 +30,7 @@ const Colors = {
   overlay: 'rgba(0, 0, 0, 0.5)',
 
   gradient: {
-    primary: ['#00B4D8', '#FF9F1C'], // Cyan to Orange (Matching new logo)
+    primary: ['#10B981', '#059669'], // Emerald Gradient
     secondary: ['#2196F3', '#64B5F6'],
     success: ['#4CAF50', '#66BB6A'],
     warning: ['#FF9800', '#FFB74D'],
