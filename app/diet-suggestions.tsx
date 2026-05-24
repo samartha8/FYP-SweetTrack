@@ -24,7 +24,8 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useHealth } from '@/contexts/HealthContext';;
 
 import { DIET_PLANS, DietPlan } from '@/constants/foodData';
 import { useMealTracking } from '@/contexts/MealTrackingContext';
@@ -44,7 +45,8 @@ export default function DietSuggestionsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { selectedDietPlan, setSelectedDietPlan } = useMealTracking();
-  const { user, riskStatus } = useUser();
+  const { user } = useAuth();
+  const { riskStatus } = useHealth();
   
   const recommendedPlanId = useMemo(() => {
     if (riskStatus === 'Positive') return 'diabetic';
