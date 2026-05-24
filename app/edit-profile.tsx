@@ -15,7 +15,7 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Save, User as UserIcon, Mail, Calendar, Ruler, Weight, Plus, ChevronDown, Check, Activity, Heart, Cigarette, Thermometer } from 'lucide-react-native';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';;
 import { useTheme } from '@/contexts/SettingsContext';
 import { useTranslation } from '@/hooks/use-translation';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,7 +25,7 @@ export default function EditProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t } = useTranslation();
-  const { user, updateUser } = useUser();
+  const { user, updateUser } = useAuth();
   const { colors, scale } = useTheme();
 
   const LOCALIZED_AGE_GROUPS = useMemo(() => [
