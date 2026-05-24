@@ -6,7 +6,7 @@ import { Activity, Droplet, Moon, Flame, X, TrendingUp, Link, ChevronRight, Plus
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, Layout, ZoomIn, FadeIn, SlideInRight } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { useUser } from '@/contexts/UserContext';
+import { useHealth } from '@/contexts/HealthContext';;
 import { useTheme } from '@/contexts/SettingsContext';
 import { useTranslation } from '@/hooks/use-translation';
 import { useMealTracking } from '@/contexts/MealTrackingContext';
@@ -18,7 +18,7 @@ const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpaci
 
 export default function WellnessScreen() {
   const insets = useSafeAreaInsets();
-  const { healthMetrics, dailyGoals, updateHealthMetrics, isGoogleFitConnected, connectGoogleFit, syncGoogleFitData } = useUser();
+  const { healthMetrics, dailyGoals, setWater, updateHealthMetrics, updateDailyGoals, fetchDailyGoals, isGoogleFitConnected, connectGoogleFit, syncGoogleFitData } = useHealth();
   const { colors, scale } = useTheme();
   const { t } = useTranslation();
   const { todayNutrition } = useMealTracking();
@@ -30,15 +30,16 @@ export default function WellnessScreen() {
   // Refresh health metrics when screen comes into focus
   useFocusEffect(
     useCallback(() => {
+      fetchDailyGoals();
       syncGoogleFitData();
-    }, [syncGoogleFitData])
+    }, [fetchDailyGoals, syncGoogleFitData])
   );
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await syncGoogleFitData();
+    await Promise.all([fetchDailyGoals(true), syncGoogleFitData(true)]);
     setIsRefreshing(false);
-  }, [syncGoogleFitData]);
+  }, [fetchDailyGoals, syncGoogleFitData]);
 
   const metrics = useMemo(() => [
     {
@@ -48,7 +49,7 @@ export default function WellnessScreen() {
       value: healthMetrics.steps || 0,
       goal: dailyGoals.steps || 10000,
       unit: t.wellness.unitSteps,
-      colors: ['#FFB700', '#FF8E00'], 
+      colors: ['#FFB700', '#FF8E00'],
       accent: '#FFF',
     },
     {
@@ -58,7 +59,7 @@ export default function WellnessScreen() {
       value: healthMetrics.water || 0,
       goal: dailyGoals.water || 8,
       unit: t.wellness.unitWater,
-      colors: ['#00B4DB', '#0083B0'], 
+      colors: ['#00B4DB', '#0083B0'],
       accent: '#FFF',
     },
     {
@@ -68,18 +69,18 @@ export default function WellnessScreen() {
       value: healthMetrics.sleep || 0,
       goal: dailyGoals.sleep || 8,
       unit: t.wellness.unitSleep,
-      colors: ['#8E2DE2', '#4A00E0'], 
+      colors: ['#8E2DE2', '#4A00E0'],
       accent: '#FFF',
     },
     {
       type: 'calories' as MetricType,
       icon: Flame,
       label: t.wellness.calories,
-      value: healthMetrics.calories || 0, 
+      value: healthMetrics.calories || 0,
       consumed: todayNutrition.calories || 0,
       goal: dailyGoals.calories || 2000,
       unit: t.wellness.unitCalories,
-      colors: ['#FF512F', '#DD2476'], 
+      colors: ['#FF512F', '#DD2476'],
       accent: '#FFF',
     },
   ], [healthMetrics, dailyGoals, t, todayNutrition.calories]);
@@ -87,23 +88,22 @@ export default function WellnessScreen() {
   const handleOpenModal = (type: MetricType) => {
     setSelectedMetric(type);
     const metric = metrics.find(m => m.type === type);
-    setInputValue(metric?.value.toString() || '0');
+    setInputValue(metric?.goal.toString() || '0');
     setModalVisible(true);
   };
 
   const notifySuccess = () => {
-      if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
   };
 
   const handleSave = () => {
     if (selectedMetric && inputValue) {
       const value = parseFloat(inputValue);
       if (!isNaN(value)) {
-        const goal = dailyGoals[selectedMetric === 'sleep' ? 'sleep' : selectedMetric] || 1;
-        if (value >= goal) notifySuccess();
-        updateHealthMetrics({ [selectedMetric]: value });
+        updateDailyGoals({ [selectedMetric]: value });
+        notifySuccess();
       }
     }
     setModalVisible(false);
@@ -115,26 +115,31 @@ export default function WellnessScreen() {
     const currentValue = healthMetrics[type] || 0;
     const newValue = currentValue + amount;
     const goal = dailyGoals[type === 'sleep' ? 'sleep' : type] || 1;
-    
+
     if (Platform.OS !== 'web') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    
+
     // Notify if this specific push crosses the goal
     if (currentValue < goal && newValue >= goal) {
-        notifySuccess();
+      notifySuccess();
     }
-    
+
+    if (type === 'water') {
+      setWater(newValue);
+      return;
+    }
+
     updateHealthMetrics({ [type]: newValue });
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.backgroundSecondary, paddingTop: insets.top }]}>
       <LinearGradient
-        colors={['#DCFCE7', '#F0FDF4', '#FFFFFF']}
+        colors={['#F0FDF4', '#F0F9FF']}
         style={StyleSheet.absoluteFill}
       />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -142,7 +147,7 @@ export default function WellnessScreen() {
           <Text style={[styles.headerSubtitle, { color: colors.textSecondary, fontSize: scale(15) }]}>{t.wellness.subtitle}</Text>
         </View>
         <TouchableOpacity style={[styles.profileBrief, { backgroundColor: '#FFF' }]} activeOpacity={0.7}>
-            <Activity size={24} color={colors.primary} strokeWidth={2.5} />
+          <Activity size={24} color={colors.primary} strokeWidth={2.5} />
         </TouchableOpacity>
       </View>
 
@@ -170,11 +175,11 @@ export default function WellnessScreen() {
               const Icon = metric.icon;
 
               return (
-                <Animated.View 
-                    key={metric.type} 
-                    entering={FadeInDown.delay(index * 100)}
-                    layout={Layout.springify()}
-                    style={styles.metricCard}
+                <Animated.View
+                  key={metric.type}
+                  entering={FadeInDown.delay(index * 100)}
+                  layout={Layout.springify()}
+                  style={styles.metricCard}
                 >
                   <LinearGradient
                     colors={metric.colors as any}
@@ -187,7 +192,7 @@ export default function WellnessScreen() {
                       <View style={styles.iconCircle}>
                         <Icon size={scale(24)} color={metric.accent} strokeWidth={2.5} />
                       </View>
-                      
+
                       <TouchableOpacity
                         style={styles.glassEditButton}
                         onPress={() => handleOpenModal(metric.type)}
@@ -198,34 +203,39 @@ export default function WellnessScreen() {
 
                     {/* Title */}
                     <View style={styles.labelRow}>
-                        <Text style={[styles.metricLabel, { fontSize: scale(16) }]}>{metric.label}</Text>
-                        {isCompleted && (
-                            <Animated.View entering={ZoomIn} style={styles.badge}>
-                                <CheckCircle2 size={12} color="#FFF" />
-                                <Text style={styles.badgeText}>Goal Hit</Text>
-                            </Animated.View>
-                        )}
+                      <Text style={[styles.metricLabel, { fontSize: scale(16) }]}>{metric.label}</Text>
+                      {isCompleted && (
+                        <Animated.View entering={ZoomIn} style={styles.badge}>
+                          <CheckCircle2 size={12} color="#FFF" />
+                          <Text style={styles.badgeText}>Goal Hit</Text>
+                        </Animated.View>
+                      )}
                     </View>
 
                     {/* Values Display */}
                     {metric.type === 'calories' ? (
-                      <View style={styles.calorieGrid}>
-                        <View style={styles.calorieStat}>
-                          <Text style={[styles.calorieValueText, { fontSize: scale(22) }]}>{Math.round(metric.consumed || 0)}</Text>
-                          <Text style={[styles.calorieLabelText, { fontSize: scale(10) }]}>{t.wellness.caloriesEaten}</Text>
+                      <View>
+                        <View style={styles.calorieGrid}>
+                          <View style={styles.calorieStat}>
+                            <Text style={[styles.calorieValueText, { fontSize: scale(22) }]}>{Math.round(metric.consumed || 0)}</Text>
+                            <Text style={[styles.calorieLabelText, { fontSize: scale(10) }]}>{t.wellness.caloriesEaten}</Text>
+                          </View>
+                          <View style={styles.calorieDivider} />
+                          <View style={styles.calorieStat}>
+                            <Text style={[styles.calorieValueText, { fontSize: scale(22) }]}>{Math.round(metric.value)}</Text>
+                            <Text style={[styles.calorieLabelText, { fontSize: scale(10) }]}>{t.wellness.caloriesBurned}</Text>
+                          </View>
+                          <View style={styles.calorieDivider} />
+                          <View style={styles.calorieStat}>
+                            <Text style={[styles.calorieValueText, { fontSize: scale(22) }]}>
+                              {Math.round((metric.consumed || 0) - metric.value)}
+                            </Text>
+                            <Text style={[styles.calorieLabelText, { fontSize: scale(10) }]}>Net</Text>
+                          </View>
                         </View>
-                        <View style={styles.calorieDivider} />
-                        <View style={styles.calorieStat}>
-                          <Text style={[styles.calorieValueText, { fontSize: scale(22) }]}>{Math.round(metric.value)}</Text>
-                          <Text style={[styles.calorieLabelText, { fontSize: scale(10) }]}>{t.wellness.caloriesBurned}</Text>
-                        </View>
-                        <View style={styles.calorieDivider} />
-                        <View style={styles.calorieStat}>
-                          <Text style={[styles.calorieValueText, { fontSize: scale(22) }]}>
-                            {Math.round((metric.consumed || 0) - metric.value)}
-                          </Text>
-                          <Text style={[styles.calorieLabelText, { fontSize: scale(10) }]}>Net</Text>
-                        </View>
+                        <Text style={styles.calorieTargetText}>
+                          {Math.round(metric.consumed || 0)} / {metric.goal} {metric.unit}
+                        </Text>
                       </View>
                     ) : (
                       <View style={styles.mainValueRow}>
@@ -237,40 +247,25 @@ export default function WellnessScreen() {
                     {/* Percentage Display */}
                     <View style={styles.progressContainer}>
                       <View style={styles.progressTrack}>
-                        <View style={[styles.progressFill, { 
+                        <View style={[styles.progressFill, {
                           width: `${progressPercent}%`,
+                          minWidth: progressPercent > 0 ? 8 : 0,
                           backgroundColor: metric.accent
                         }]} />
                       </View>
                       <Text style={[styles.percentageText, { fontSize: scale(16) }]}>
-                        {Math.round(rawPercentage)}%
+                        {metric.type === 'calories'
+                          ? `${Math.round(rawPercentage)}% of ${metric.goal} ${metric.unit}`
+                          : `${Math.round(rawPercentage)}%`}
                       </Text>
                     </View>
 
                     {/* Quick Addition Row */}
                     <View style={styles.actionsRow}>
-                      {metric.type === 'steps' && (
-                        <>
-                          <QuickAddButton label="+1000" onPress={() => handleQuickAdd('steps', 1000)} />
-                          <QuickAddButton label="+5000" onPress={() => handleQuickAdd('steps', 5000)} />
-                        </>
-                      )}
                       {metric.type === 'water' && (
                         <>
                           <QuickAddButton label={`+1 ${metric.unit}`} onPress={() => handleQuickAdd('water', 1)} />
                           <QuickAddButton label={`+2 ${metric.unit}`} onPress={() => handleQuickAdd('water', 2)} />
-                        </>
-                      )}
-                      {metric.type === 'sleep' && (
-                        <>
-                          <QuickAddButton label="+1 hr" onPress={() => handleQuickAdd('sleep', 1)} />
-                          <QuickAddButton label="+2 hrs" onPress={() => handleQuickAdd('sleep', 2)} />
-                        </>
-                      )}
-                      {metric.type === 'calories' && (
-                        <>
-                          <QuickAddButton label="+100" onPress={() => handleQuickAdd('calories', 100)} />
-                          <QuickAddButton label="+500" onPress={() => handleQuickAdd('calories', 500)} />
                         </>
                       )}
                     </View>
@@ -318,7 +313,7 @@ export default function WellnessScreen() {
           <Animated.View entering={FadeInDown} style={[styles.modalContent, { backgroundColor: '#FFF' }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text, fontSize: scale(22) }]}>
-                {t.common.update} {metrics.find(m => m.type === selectedMetric)?.label}
+                {t.common.update} {metrics.find(m => m.type === selectedMetric)?.label} {t.common.goal}
               </Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <X size={24} color={colors.textSecondary} />
@@ -348,12 +343,12 @@ export default function WellnessScreen() {
 }
 
 function QuickAddButton({ label, onPress }: { label: string; onPress: () => void }) {
-    return (
-        <AnimatedTouchableOpacity activeOpacity={0.7} onPress={onPress} style={styles.quickAdd}>
-            <Plus size={14} color="#FFF" style={{ marginRight: 4 }} />
-            <Text style={styles.quickAddText}>{label}</Text>
-        </AnimatedTouchableOpacity>
-    );
+  return (
+    <AnimatedTouchableOpacity activeOpacity={0.7} onPress={onPress} style={styles.quickAdd}>
+      <Plus size={14} color="#FFF" style={{ marginRight: 4 }} />
+      <Text style={styles.quickAddText}>{label}</Text>
+    </AnimatedTouchableOpacity>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -375,7 +370,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...Platform.select({
-        native: { elevation: 3, shadowOpacity: 0.1, shadowRadius: 10 }
+      native: { elevation: 3, shadowOpacity: 0.1, shadowRadius: 10 }
     })
   },
   scrollView: { flex: 1 },
@@ -385,7 +380,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 24,
     ...Platform.select({
-        native: { elevation: 12, shadowColor: '#4285F4', shadowOpacity: 0.2, shadowRadius: 15 }
+      native: { elevation: 12, shadowColor: '#4285F4', shadowOpacity: 0.2, shadowRadius: 15 }
     })
   },
   googleFitGradient: { padding: 24, flexDirection: 'row', alignItems: 'center' },
@@ -406,7 +401,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 20,
     ...Platform.select({
-        native: { elevation: 8, shadowOpacity: 0.15, shadowRadius: 20 }
+      native: { elevation: 8, shadowOpacity: 0.15, shadowRadius: 20 }
     })
   },
   metricGradient: { padding: 24 },
@@ -443,10 +438,11 @@ const styles = StyleSheet.create({
   calorieValueText: { fontSize: 22, fontWeight: '900', color: '#FFF' },
   calorieLabelText: { fontSize: 10, color: '#FFF', opacity: 0.8, fontWeight: '700', textTransform: 'uppercase' },
   calorieDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.2)' },
+  calorieTargetText: { color: '#FFF', opacity: 0.85, fontSize: 13, fontWeight: '800', marginBottom: 12 },
   progressContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
   progressTrack: { flex: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 6, overflow: 'hidden', marginRight: 12 },
   progressFill: { height: '100%', borderRadius: 6 },
-  percentageText: { fontSize: 16, fontWeight: '900', color: '#FFF', width: 65, textAlign: 'right' },
+  percentageText: { fontSize: 16, fontWeight: '900', color: '#FFF', minWidth: 65, maxWidth: 130, textAlign: 'right' },
   actionsRow: { flexDirection: 'row', gap: 12 },
   quickAdd: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.2)', paddingVertical: 14, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   quickAddText: { fontSize: 15, fontWeight: '800', color: '#FFF' },
@@ -509,4 +505,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-
