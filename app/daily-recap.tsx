@@ -7,6 +7,7 @@ import Animated, { FadeInDown, FadeInUp, ZoomIn, Layout } from 'react-native-rea
 import { ArrowLeft, Target, Flame, Candy, Wheat, Beef, ShieldCheck, ShieldAlert, Zap, Calendar, Sparkles } from 'lucide-react-native';
 import { useMealTracking } from '@/contexts/MealTrackingContext';
 import { useTheme } from '@/contexts/SettingsContext';
+import { useHealth } from '@/contexts/HealthContext';
 
 const { width } = Dimensions.get('window');
 
@@ -15,6 +16,7 @@ export default function DailyRecapScreen() {
   const router = useRouter();
   const { colors, scale: fontScale } = useTheme();
   const { getDailyRecap } = useMealTracking();
+  const { healthMetrics } = useHealth();
 
   const [loading, setLoading] = useState(true);
   const [recapData, setRecapData] = useState<any>(null);
@@ -76,7 +78,15 @@ export default function DailyRecapScreen() {
   }
 
   const { totals, report } = recapData;
-  const isPositive = report.risks.length === 0;
+  const activityRisk = healthMetrics.steps < 2000 && totals.calories > 0
+    ? {
+        title: 'Low Activity With Intake',
+        detail: `${healthMetrics.steps || 0} steps today while meals were logged. This combination reduces glucose clearance and can increase metabolic pressure.`,
+        type: 'red',
+      }
+    : null;
+  const displayedRisks = activityRisk ? [activityRisk, ...report.risks] : report.risks;
+  const isPositive = displayedRisks.length === 0;
 
   return (
     <View style={styles.container}>
@@ -111,6 +121,25 @@ export default function DailyRecapScreen() {
             </Animated.View>
           ))}
         </View>
+        {displayedRisks.length > 0 && (
+          <View style={styles.section}>
+            <Text style={themed.sectionTitle}>Risk Warnings</Text>
+            {displayedRisks.map((risk: any, i: number) => (
+              <Animated.View
+                key={`${risk.title}-${i}`}
+                entering={FadeInDown.delay(300 + i * 50)}
+                style={[
+                  styles.insightCard,
+                  { borderLeftColor: risk.type === 'red' ? '#EF4444' : '#F59E0B' },
+                  themed.card,
+                ]}
+              >
+                <Text style={themed.insightTitle}>{risk.title}</Text>
+                <Text style={themed.insightBody}>{risk.detail}</Text>
+              </Animated.View>
+            ))}
+          </View>
+        )}
         {report.wins.length > 0 && (
           <View style={styles.section}>
             <Text style={themed.sectionTitle}>Metabolic Wins</Text>
