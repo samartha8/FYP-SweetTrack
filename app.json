@@ -8,7 +8,13 @@
     "scheme": "diabetesapp",
     "userInterfaceStyle": "automatic",
     "extra": {
-      "apiHost": "192.168.1.136"
+      "apiHost": "192.168.1.136",
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "7ddb0981-7989-452c-8065-063fc23f3626"
+      }
     },
     "ios": {
       "supportsTablet": true,
@@ -16,6 +22,7 @@
     },
     "android": {
       "package": "com.sweettrack.fypsweettrack",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -24,6 +31,14 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.BODY_SENSORS"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -38,6 +53,11 @@
               "scheme": "diabetesapp",
               "host": "auth",
               "pathPrefix": "/error"
+            },
+            {
+              "scheme": "diabetesapp",
+              "host": "google-fit",
+              "pathPrefix": "/callback"
             }
           ],
           "category": [
@@ -64,11 +84,21 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#10B981",
+          "defaultChannel": "default"
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": false
-    }
+    },
+    "owner": "fircome123"
   }
 }
