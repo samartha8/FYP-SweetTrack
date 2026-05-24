@@ -1,12 +1,15 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Dimensions, Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TrendingDown, Activity, Utensils, Info, ChevronLeft, ShieldCheck, Zap, ArrowLeft, Sparkles } from 'lucide-react-native';
+import { TrendingDown, Activity, Utensils, Info, ChevronLeft, ShieldCheck, Zap, ArrowLeft, Sparkles, Download } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { useTheme } from '@/contexts/SettingsContext';
-import { useUser } from '@/contexts/UserContext';
+import { useHealth } from '@/contexts/HealthContext';
 import { useMealTracking } from '@/contexts/MealTrackingContext';
+import { useAuth } from '@/contexts/AuthContext';
 import Animated, { FadeInDown, FadeInUp, Layout, ZoomIn } from 'react-native-reanimated';
 
 const { width } = Dimensions.get('window');
@@ -15,8 +18,9 @@ export default function ProgressImpactScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const { colors, scale } = useTheme();
-    const { healthMetrics, riskStatus } = useUser();
+    const { healthMetrics, riskStatus } = useHealth();
     const { mealLogs } = useMealTracking();
+    const { user } = useAuth();
 
     // --- Metabolic Synergy Algorithm ---
     const synergyData = useMemo(() => {
@@ -38,15 +42,18 @@ export default function ProgressImpactScreen() {
             stepStatus = 'Insufficient';
         }
 
-        const last7Days = new Date();
-        last7Days.setDate(last7Days.getDate() - 7);
-        const recentLogs = mealLogs.filter(log => new Date(log.date) >= last7Days);
+        const today = new Date().toLocaleDateString('sv-SE');
+        const recentLogs = mealLogs.filter(log => new Date(log.date).toLocaleDateString('sv-SE') === today);
         const healthyMeals = recentLogs.filter(log => (log.nutritionalInfo?.sugar || 0) < 15).length;
         const unhealthyMeals = recentLogs.filter(log => (log.nutritionalInfo?.sugar || 0) >= 25).length;
-        const rawMealImpact = (healthyMeals * 1.5) - (unhealthyMeals * 5.0);
-        let mealImpact = Math.min(rawMealImpact, 10); 
+        const highCalorieMeals = recentLogs.filter(log => (log.nutritionalInfo?.calories || 0) >= 600).length;
+        const totalCalories = recentLogs.reduce((sum, log) => sum + (log.nutritionalInfo?.calories || 0), 0);
+        const calorieLoadPenalty = totalCalories >= 2500 ? -6.0 : totalCalories >= 2000 ? -3.0 : 0;
+        const frequentEatingPenalty = recentLogs.length >= 5 ? -4.0 : 0;
+        const rawMealImpact = (healthyMeals * 3.0) - (unhealthyMeals * 7.0) - (highCalorieMeals * 4.0) + calorieLoadPenalty + frequentEatingPenalty; 
+        let mealImpact = Math.min(rawMealImpact, 15); 
         let totalImpactNumber = stepImpact + mealImpact;
-        const isDownwardSpiral = steps < 2000 && unhealthyMeals > 0;
+        const isDownwardSpiral = steps < 2000 && (unhealthyMeals > 0 || highCalorieMeals > 0 || totalCalories >= 2000 || recentLogs.length >= 5);
         let spiralPenalty = 0;
         
         if (isDownwardSpiral) {
@@ -69,6 +76,8 @@ export default function ProgressImpactScreen() {
             interpretation = "Action Required: Current trends are increasing metabolic load and insulin resistance risk.";
         } else if (unhealthyMeals > 0) {
             interpretation = "Some choices today added metabolic load. Increase activity to neutralize this impact.";
+        } else if (steps < 2000 && (totalCalories >= 2000 || recentLogs.length >= 5)) {
+            interpretation = "Warning: food intake is accumulating while activity is critically low. A short walk can help reduce post-meal glucose pressure.";
         }
         
         if (riskStatus === 'Positive' && totalImpact >= 10) {
@@ -81,6 +90,8 @@ export default function ProgressImpactScreen() {
             stepStatus,
             healthyMeals,
             unhealthyMeals,
+            highCalorieMeals,
+            totalCalories,
             totalRecentMeals: recentLogs.length,
             mealImpact,
             isDownwardSpiral,
@@ -91,6 +102,104 @@ export default function ProgressImpactScreen() {
             isCritical: totalImpact <= -18
         };
     }, [healthMetrics.steps, mealLogs, riskStatus]);
+
+    const exportToPDF = async () => {
+        try {
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                    <head>
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+                        <style>
+                            body { font-family: 'Helvetica', sans-serif; padding: 40px; color: #1e293b; background: #fff; }
+                            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 30px; }
+                            .logo { font-size: 24px; font-weight: 900; color: #10b981; }
+                            .main-card { 
+                                background: ${synergyData.totalImpact >= 0 ? '#10b981' : synergyData.isCritical ? '#7f1d1d' : '#ef4444'}; 
+                                color: #fff; border-radius: 24px; padding: 40px; text-align: center; margin-bottom: 30px; 
+                            }
+                            .score { font-size: 64px; font-weight: 900; margin-bottom: 10px; }
+                            .label { font-size: 14px; font-weight: 800; opacity: 0.8; letter-spacing: 1px; }
+                            .interpretation { font-style: italic; font-size: 16px; margin-top: 20px; line-height: 1.5; }
+                            .section-title { font-size: 18px; font-weight: 800; color: #1e293b; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; }
+                            .row { display: flex; align-items: center; background: #f8fafc; padding: 20px; border-radius: 16px; margin-bottom: 12px; border: 1px solid #e2e8f0; }
+                            .row-info { flex: 1; }
+                            .row-name { font-size: 16px; font-weight: 800; color: #1e293b; }
+                            .row-detail { font-size: 13px; color: #64748b; margin-top: 2px; }
+                            .row-value { font-size: 20px; font-weight: 900; color: #10b981; }
+                            .negative { color: #ef4444; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <div>
+                                <div class="logo">Metabolic Synergy Report</div>
+                                <div style="font-size: 14px; color: #64748b; margin-top: 4px;">Patient: ${user?.name || 'Anonymous User'}</div>
+                            </div>
+                            <div style="text-align: right; color: #64748b; font-size: 12px;">
+                                DATE: ${new Date().toLocaleDateString()}<br/>
+                                STATUS: ${synergyData.impactLabel}
+                            </div>
+                        </div>
+
+                        <div class="main-card">
+                            <div class="label">METABOLIC NEUTRALIZATION</div>
+                            <div class="score">${synergyData.totalImpact > 0 ? '+' : ''}${synergyData.totalImpact}%</div>
+                            <div class="interpretation">"${synergyData.interpretation}"</div>
+                        </div>
+
+                        <div class="section-title">Mitigation Breakdown</div>
+                        
+                        <div class="row">
+                            <div class="row-info">
+                                <div class="row-name">Physical Activity</div>
+                                <div class="row-detail">${synergyData.steps.toLocaleString()} steps • ${synergyData.stepStatus}</div>
+                            </div>
+                            <div class="row-value ${synergyData.stepImpact < 0 ? 'negative' : ''}">
+                                ${synergyData.stepImpact > 0 ? '+' : ''}${synergyData.stepImpact}%
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="row-info">
+                                <div class="row-name">Metabolic Diet</div>
+                                <div class="row-detail">${synergyData.totalRecentMeals} logged • ${synergyData.healthyMeals} optimal</div>
+                            </div>
+                            <div class="row-value ${synergyData.mealImpact < 0 ? 'negative' : ''}">
+                                ${synergyData.mealImpact > 0 ? '+' : ''}${synergyData.mealImpact}%
+                            </div>
+                        </div>
+
+                        ${synergyData.isDownwardSpiral ? `
+                            <div class="row" style="border-color: #fecdd3; background: #fff1f2;">
+                                <div class="row-info">
+                                    <div class="row-name" style="color: #ef4444;">Synergy Penalty</div>
+                                    <div class="row-detail">Inactivity + High Glycemic Load</div>
+                                </div>
+                                <div class="row-value negative">${synergyData.spiralPenalty.toFixed(1)}%</div>
+                            </div>
+                        ` : ''}
+
+                        <div style="margin-top: 40px; padding: 20px; background: #f0f9ff; border-radius: 12px; font-size: 13px; line-height: 1.6; color: #0369a1;">
+                            <strong>What is this score?</strong><br/>
+                            This synergy score calculates how your current physical activity and dietary choices are actively neutralizing your underlying AI-predicted diabetes risk factors.
+                        </div>
+
+                    </body>
+                </html>
+            `;
+
+            const result = await Print.printToFileAsync({ html: htmlContent });
+            if (Platform.OS === 'web') {
+                await Print.printAsync({ html: htmlContent });
+            } else if (result && result.uri) {
+                await Sharing.shareAsync(result.uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+            }
+        } catch (error) {
+            console.error("PDF Export Error:", error);
+            Alert.alert("Export Failed", "Could not generate the synergy report.");
+        }
+    };
 
     const themed = useMemo(() => ({
         container: { backgroundColor: 'transparent' },
@@ -122,7 +231,9 @@ export default function ProgressImpactScreen() {
                     <ArrowLeft size={28} color={colors.text} strokeWidth={2.5} />
                 </TouchableOpacity>
                 <Text style={themed.headerTitle}>Metabolic Synergy</Text>
-                <View style={{ width: 44 }} />
+                <TouchableOpacity onPress={exportToPDF} style={styles.downloadButton}>
+                    <Download size={24} color={colors.primary} strokeWidth={2.5} />
+                </TouchableOpacity>
             </View>
 
             <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false}>
@@ -356,5 +467,18 @@ const styles = StyleSheet.create({
         fontSize: 13,
         lineHeight: 20,
         fontWeight: '600',
+    },
+    downloadButton: {
+        width: 44,
+        height: 44,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#FFF',
+        borderRadius: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2,
     },
 });
