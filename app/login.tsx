@@ -14,11 +14,10 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Eye, EyeOff, Lock, Mail, ArrowRight, Github, Sparkles } from 'lucide-react-native';
-import { useUser } from '@/contexts/UserContext';
+import { Eye, EyeOff, Lock, Mail, ArrowRight, Sparkles } from 'lucide-react-native';
+import { useAuth } from '@/contexts/AuthContext';
 import { useTranslation } from '@/hooks/use-translation';
 import { useTheme } from '@/contexts/SettingsContext';
-import LanguageSelector from '@/components/LanguageSelector';
 import Animated, { FadeInDown, FadeInUp, ZoomIn } from 'react-native-reanimated';
 
 const { width } = Dimensions.get('window');
@@ -28,37 +27,41 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
   const router = useRouter();
-  const { login, signInWithGoogle } = useUser();
+  const { login, signInWithGoogle } = useAuth();
   const { t } = useTranslation();
   const { colors, scale } = useTheme();
 
   const handleLogin = async () => {
     if (!email || !password) {
-      setErrorMsg(t.auth.fillAllFields || 'Please fill all fields');
+      setErrorMsg(t.auth.errorMissing || 'Please fill all fields');
       return;
     }
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const success = await login(email, password);
-      if (!success) {
-        setErrorMsg(t.auth.invalidCredentials || 'Invalid credentials');
+      // @ts-ignore
+      const result = await login(email, password);
+      
+      if (!result.success) {
+        setErrorMsg(result.message || t.auth.errorFailed || 'Invalid credentials');
       } else {
         router.replace('/(tabs)/home' as any);
       }
     } catch (error) {
-      setErrorMsg(t.auth.errorLogin || 'Login error occurred');
+      console.error('Login Error:', error);
+      setErrorMsg(t.auth.errorFailed || 'Login error occurred');
     } finally {
       setIsLoading(false);
     }
   };
 
   const themed = useMemo(() => ({
-    title: { color: colors.text, fontSize: scale(42), fontWeight: '900' as const, letterSpacing: -2 },
-    subtitle: { color: colors.textSecondary, fontSize: scale(16), fontWeight: '600' as const, marginTop: 8 },
+    title: { color: '#FFFFFF', fontSize: scale(46), fontWeight: '900' as const, letterSpacing: -2.5 }, 
+    subtitle: { color: 'rgba(255,255,255,0.7)', fontSize: scale(15), fontWeight: '500' as const, marginTop: 4, textTransform: 'uppercase' as const, letterSpacing: 1.5 },
     inputContainer: { 
       backgroundColor: '#FFF', 
       borderRadius: 20, 
@@ -108,13 +111,18 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
       style={styles.container}
     >
-      <LinearGradient colors={['#F0FDF4', '#F0F9FF']} style={StyleSheet.absoluteFill} />
+      <LinearGradient 
+        colors={['#0F172A', '#064E3B', '#0D9488']} // Deep Midnight to Emerald
+        style={StyleSheet.absoluteFill} 
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
       
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.topSection}>
            <Animated.View entering={ZoomIn.delay(200)} style={styles.logoContainer}>
-              <LinearGradient colors={['#00B4D8', '#0077B6']} style={styles.logoGradient}>
-                <Sparkles size={40} color="#FFF" strokeWidth={2.5} />
+              <LinearGradient colors={['#F0FDF4', '#DCFCE7']} style={styles.logoGradient}>
+                <Sparkles size={44} color="#059669" strokeWidth={2.2} />
               </LinearGradient>
            </Animated.View>
            
@@ -125,30 +133,36 @@ export default function LoginScreen() {
         </View>
 
         <Animated.View entering={FadeInDown.delay(600)} style={styles.formSection}>
-          <View style={styles.languageBox}>
-            <LanguageSelector />
-          </View>
-
           {errorMsg ? (
             <Animated.View entering={FadeInUp} style={styles.errorContainer}>
               <Text style={styles.errorText}>{errorMsg}</Text>
             </Animated.View>
           ) : null}
 
-          <View style={themed.inputContainer}>
+          <View
+            style={themed.inputContainer}
+          >
             <Mail size={20} color={colors.textSecondary} strokeWidth={2} />
             <TextInput
-              style={styles.input}
+              style={[styles.input, styles.emailInput]}
               placeholder={t.auth.email}
               placeholderTextColor={colors.textSecondary + '80'}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
               keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
+              autoCorrect={false}
+              spellCheck={false}
+              importantForAutofill="yes"
+              disableFullscreenUI
             />
           </View>
 
-          <View style={themed.inputContainer}>
+          <View
+            style={themed.inputContainer}
+          >
             <Lock size={20} color={colors.textSecondary} strokeWidth={2} />
             <TextInput
               style={styles.input}
@@ -157,6 +171,12 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
+              autoComplete="password"
+              textContentType="password"
+              autoCorrect={false}
+              spellCheck={false}
+              importantForAutofill="yes"
+              disableFullscreenUI
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
               {showPassword ? <EyeOff size={20} color={colors.textSecondary} /> : <Eye size={20} color={colors.textSecondary} />}
@@ -169,7 +189,7 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={isLoading}
           >
-            <LinearGradient colors={['#00B4D8', '#0077B6']} style={StyleSheet.absoluteFill} start={{x:0, y:0}} end={{x:1, y:0}} />
+            <LinearGradient colors={['#10B981', '#059669']} style={StyleSheet.absoluteFill} start={{x:0, y:0}} end={{x:1, y:0}} />
             {isLoading ? (
               <ActivityIndicator color="#FFF" />
             ) : (
@@ -190,20 +210,38 @@ export default function LoginScreen() {
             <TouchableOpacity 
               activeOpacity={0.7}
               style={themed.socialBtn} 
+              disabled={isGoogleLoading}
               onPress={async () => {
-                await signInWithGoogle();
-                router.replace('/(tabs)/home' as any);
+                if (isGoogleLoading) return;
+                setIsGoogleLoading(true);
+                setErrorMsg('');
+                try {
+                  const res = await signInWithGoogle();
+                  if (res?.success) {
+                    router.replace(res.needsHealthSetup ? '/health-setup' as any : '/(tabs)/home' as any);
+                  } else if (res?.message) {
+                    setErrorMsg(res.message);
+                  }
+                } finally {
+                  setIsGoogleLoading(false);
+                }
               }}
             >
-              <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png' }} style={styles.socialIcon} />
-              <Text style={styles.socialBtnText}>Google</Text>
+              {isGoogleLoading ? (
+                <ActivityIndicator color="#1E293B" />
+              ) : (
+                <>
+                  <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png' }} style={styles.socialIcon} />
+                  <Text style={styles.socialBtnText}>Google</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>{t.auth.noAccount} </Text>
+            <Text style={[styles.footerText, { color: 'rgba(255,255,255,0.8)' }]}>{t.auth.alreadyHaveAccount.split('?')[0]}? </Text>
             <TouchableOpacity onPress={() => router.push('/signup')}>
-              <Text style={[styles.signupText, { color: colors.primary }]}>{t.auth.signup}</Text>
+              <Text style={[styles.signupText, { color: '#FFFFFF' }]}>{t.auth.signup}</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -235,9 +273,9 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#00B4D8',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.2,
     shadowRadius: 20,
     elevation: 10,
   },
@@ -246,10 +284,6 @@ const styles = StyleSheet.create({
   },
   formSection: {
     flex: 1,
-  },
-  languageBox: {
-    alignItems: 'flex-end',
-    marginBottom: 24,
   },
   errorContainer: {
     backgroundColor: '#FEE2E2',
@@ -272,6 +306,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1E293B',
   },
+  emailInput: {
+    paddingRight: 72,
+  },
   loginBtnContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -285,11 +322,11 @@ const styles = StyleSheet.create({
   divider: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(0,0,0,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.3)',
   },
   dividerText: {
     marginHorizontal: 16,
-    color: '#94A3B8',
+    color: 'rgba(255,255,255,0.8)',
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
@@ -313,7 +350,6 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   footerText: {
-    color: '#64748B',
     fontSize: 15,
     fontWeight: '600',
   },
