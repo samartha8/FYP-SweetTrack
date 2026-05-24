@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import { Activity, Heart, MessageCircle, Camera, TrendingUp, ArrowRight, Sparkles } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp, ZoomIn, useAnimatedStyle, useSharedValue, withRepeat, withTiming, Easing, interpolate } from 'react-native-reanimated';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';;
 import { useTheme } from '@/contexts/SettingsContext';
 
 const { width, height } = Dimensions.get('window');
@@ -75,7 +75,7 @@ export default function OnboardingScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
   const router = useRouter();
-  const { completeOnboarding } = useUser();
+  const { completeOnboarding } = useAuth();
   const insets = useSafeAreaInsets();
   const { colors, scale } = useTheme();
 
