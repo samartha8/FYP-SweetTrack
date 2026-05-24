@@ -149,6 +149,8 @@ export const translations = {
             height: 'Height',
             weight: 'Weight',
             sex: 'Gender',
+            lifestyleWarning: 'This is a Lifestyle Estimate. Upload recent lab reports (HbA1c/Glucose) for a precise Clinical Analysis.',
+            rescanReport: 'Scan Lab Report',
         },
         settings: {
             header: 'Settings',
@@ -692,6 +694,8 @@ export const translations = {
             height: 'उचाइ',
             weight: 'तौल',
             sex: 'लिङ्ग',
+            lifestyleWarning: 'यो जीवनशैलीमा आधारित अनुमान हो। सटीक क्लिनिकल विश्लेषणका लागि भर्खरैको ल्याब रिपोर्टहरू (HbA1c/ग्लुकोज) अपलोड गर्नुहोस्।',
+            rescanReport: 'ल्याब रिपोर्ट स्क्यान गर्नुहोस्',
         },
         settings: {
             header: 'सेटिङ्स',
@@ -1235,6 +1239,8 @@ export const translations = {
             height: '身長',
             weight: '体重',
             sex: '性別',
+            lifestyleWarning: 'これはライフスタイルに基づく推定値です。正確な臨床分析のために、最近の検査結果（HbA1c/血糖値）をアップロードしてください。',
+            rescanReport: '検査結果をスキャン',
         },
         settings: {
             header: '設定',
