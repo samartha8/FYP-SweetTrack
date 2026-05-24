@@ -2,7 +2,8 @@ import { createContextHook } from '@/hooks/use-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Platform } from 'react-native';
-import { useUser } from './UserContext';
+import { useAuth } from './AuthContext';
+import { useHealth } from './HealthContext';;
 import { DIET_PLANS, DietPlan } from '@/constants/foodData';
 
 export type MealLog = {
@@ -89,7 +90,8 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
   const activeDietDetails = useMemo(() => {
     return DIET_PLANS.find(p => p.id === selectedDietPlan) || DIET_PLANS.find(p => p.id === 'balanced')!;
   }, [selectedDietPlan]);
-  const { user, ensureAccessToken, isLoading: isAuthLoading, syncGoogleFitData } = useUser();
+  const { user, ensureAccessToken, isLoading: isAuthLoading } = useAuth();
+  const { syncGoogleFitData } = useHealth();
   const lastUserRef = useRef<any>(null);
 
   const lastLoadedUserId = useRef<string | null>(null);
@@ -156,7 +158,11 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
       if (token) {
         if (__DEV__) console.log(`[MealTracking] Fetching from backend: ${API_BASE_URL}`);
         let res = await fetch(`${API_BASE_URL}`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          }
         });
 
         // Handle 401 retry linearly
@@ -170,7 +176,11 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
           }
           // If token is successfully refreshed, retry the fetch
           res = await fetch(`${API_BASE_URL}`, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json',
+              'ngrok-skip-browser-warning': 'true'
+            }
           });
         }
 
@@ -284,8 +294,9 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
 
       try {
         const headers: any = {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         };
 
         let body;
@@ -372,7 +383,11 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
       try {
         await fetch(`${API_BASE_URL}/meals/${backendId}`, {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          }
         });
         
         // Trigger health metrics sync to update global 'caloriesConsumed'
@@ -519,7 +534,11 @@ export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
       if (!token) return null;
 
       const res = await fetch(`${API_BASE_URL}/daily-recap`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       const data = await res.json();
       return data.success ? data : null;
