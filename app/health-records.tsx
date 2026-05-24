@@ -1,3 +1,4 @@
+import { secureFetch as fetch } from '@/lib/apiClient';
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, FlatList, Platform, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -5,7 +6,7 @@ import { useRouter, Stack } from 'expo-router';
 import { ChevronLeft, Plus, FileText, Trash2, Calendar, Link as LinkIcon, ArrowLeft, Sparkles } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp, Layout, ZoomIn } from 'react-native-reanimated';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';;
 import { RECORDS_URL } from '@/constants/Api';
 import { useTranslation } from '@/hooks/use-translation';
 import { useTheme } from '@/contexts/SettingsContext';
@@ -24,7 +25,7 @@ type HealthRecord = {
 export default function HealthRecordsScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
-    const { ensureAccessToken } = useUser();
+    const { ensureAccessToken } = useAuth();
     const { colors, scale } = useTheme();
     const { t } = useTranslation();
     const [loading, setLoading] = useState(true);
@@ -34,7 +35,11 @@ export default function HealthRecordsScreen() {
         try {
             const token = await ensureAccessToken();
             const response = await fetch(RECORDS_URL, {
-                headers: { 'Authorization': `Bearer ${token || ''}` }
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json',
+                    'ngrok-skip-browser-warning': 'true'
+                }
             });
             const json = await response.json();
             if (json.success) setRecords(json.records);
@@ -52,7 +57,11 @@ export default function HealthRecordsScreen() {
                 const token = await ensureAccessToken();
                 const response = await fetch(`${RECORDS_URL}/${id}`, {
                     method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token || ''}` }
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json',
+                        'ngrok-skip-browser-warning': 'true'
+                    }
                 });
                 const json = await response.json();
                 if (json.success) setRecords(prev => prev.filter(r => r._id !== id));
@@ -97,7 +106,12 @@ export default function HealthRecordsScreen() {
             const payload = { recordName: name, recordType: name.includes('Prescription') ? 'Prescription' : 'Report', fileUrl: 'https://example.com/mock.pdf', notes: 'Uploaded' };
             const res = await fetch(RECORDS_URL, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token || ''}`, 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'ngrok-skip-browser-warning': 'true',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify(payload)
             });
             const json = await res.json();
