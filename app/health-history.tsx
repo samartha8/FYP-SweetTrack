@@ -1,17 +1,18 @@
+import { secureFetch as fetch } from '@/lib/apiClient';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList } from 'react-native';
 import { useState, useCallback, useMemo } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { ChevronDown, ChevronUp, ArrowLeft, FileText } from 'lucide-react-native';
 import { useTranslation } from '@/hooks/use-translation';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';;
 import { DIABETES_URL } from '@/constants/Api';
 import { useTheme } from '@/contexts/SettingsContext';
 
 export default function HealthHistoryScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
-    const { ensureAccessToken } = useUser();
+    const { ensureAccessToken } = useAuth();
     const { colors, scale } = useTheme();
     const { t } = useTranslation();
 
@@ -139,7 +140,11 @@ export default function HealthHistoryScreen() {
             setLoading(true);
             const token = await ensureAccessToken();
             const response = await fetch(`${DIABETES_URL}/history`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json',
+                    'ngrok-skip-browser-warning': 'true'
+                }
             });
             const json = await response.json();
             if (json.success) {
