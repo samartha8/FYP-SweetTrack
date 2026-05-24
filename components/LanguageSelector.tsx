@@ -94,24 +94,17 @@ export default function LanguageSelector() {
     };
 
     return (
-        <View style={[styles.container, { top: insets.top || 20 }]}>
+        <View style={styles.container}>
             <TouchableOpacity
-                activeOpacity={0.8}
+                activeOpacity={0.7}
                 onPress={() => setModalVisible(true)}
             >
-                <LinearGradient
-                    colors={[colors.card + '99', colors.card + 'CC']}
-                    style={[styles.glassButton, { borderColor: colors.border }]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                >
-                    <View style={[styles.iconContainer, { backgroundColor: colors.primary + '20' }]}>
-                        <Globe size={18} color={colors.primary} strokeWidth={2.5} />
-                    </View>
-                    <Text style={[styles.buttonText, themed.buttonText]}>
+                <View style={[styles.glassButton, { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'rgba(255,255,255,0.2)' }]}>
+                    <Globe size={18} color="#FFFFFF" strokeWidth={2.5} />
+                    <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>
                         {currentLanguage.code.toUpperCase()}
                     </Text>
-                </LinearGradient>
+                </View>
             </TouchableOpacity>
 
             <Modal
@@ -120,75 +113,77 @@ export default function LanguageSelector() {
                 animationType="none"
                 onRequestClose={handleClose}
             >
-                <View style={styles.modalFull}>
-                    <TouchableWithoutFeedback onPress={handleClose}>
-                        <Animated.View style={[styles.backdrop, { opacity: fadeAnim, backgroundColor: 'rgba(0,0,0,0.6)' }]} />
-                    </TouchableWithoutFeedback>
+                {modalVisible && (
+                    <View style={styles.modalFull}>
+                        <TouchableWithoutFeedback onPress={handleClose}>
+                            <Animated.View style={[styles.backdrop, { opacity: fadeAnim, backgroundColor: 'rgba(0,0,0,0.6)' }]} />
+                        </TouchableWithoutFeedback>
 
-                    <Animated.View
-                        style={[
-                            styles.drawer,
-                            themed.drawer,
-                            { transform: [{ translateY: slideAnim }], paddingBottom: insets.bottom + 20 }
-                        ]}
-                    >
-                        <View style={[styles.drawerHandle, { backgroundColor: colors.border }]} />
+                        <Animated.View
+                            style={[
+                                styles.drawer,
+                                themed.drawer,
+                                { transform: [{ translateY: slideAnim }], paddingBottom: insets.bottom + 20 }
+                            ]}
+                        >
+                            <View style={[styles.drawerHandle, { backgroundColor: colors.border }]} />
 
-                        <View style={styles.drawerHeader}>
-                            <Text style={[styles.drawerTitle, themed.drawerTitle]}>
-                                {t.settings.language}
-                            </Text>
-                            <Text style={[styles.drawerSubtitle, themed.drawerSubtitle]}>
-                                Choose your preferred language
-                            </Text>
-                        </View>
+                            <View style={styles.drawerHeader}>
+                                <Text style={[styles.drawerTitle, themed.drawerTitle]}>
+                                    {t.settings.language}
+                                </Text>
+                                <Text style={[styles.drawerSubtitle, themed.drawerSubtitle]}>
+                                    Choose your preferred language
+                                </Text>
+                            </View>
 
-                        <View style={styles.optionsList}>
-                            {languages.map((lang) => (
-                                <TouchableOpacity
-                                    key={lang.code}
-                                    activeOpacity={0.7}
-                                    style={[
-                                        styles.optionItem,
-                                        themed.option,
-                                        settings.language === lang.code && themed.activeOption,
-                                        { borderColor: settings.language === lang.code ? colors.primary : colors.border + '40' }
-                                    ]}
-                                    onPress={() => {
-                                        setLanguage(lang.code);
-                                        handleClose();
-                                    }}
-                                >
-                                    <View style={styles.optionLeft}>
-                                        <View style={styles.flagContainer}>
-                                            <Text style={styles.flagText}>{lang.flag}</Text>
+                            <View style={styles.optionsList}>
+                                {languages.map((lang) => (
+                                    <TouchableOpacity
+                                        key={lang.code}
+                                        activeOpacity={0.7}
+                                        style={[
+                                            styles.optionItem,
+                                            themed.option,
+                                            settings.language === lang.code && themed.activeOption,
+                                            { borderColor: settings.language === lang.code ? colors.primary : colors.border + '40' }
+                                        ]}
+                                        onPress={() => {
+                                            setLanguage(lang.code);
+                                            handleClose();
+                                        }}
+                                    >
+                                        <View style={styles.optionLeft}>
+                                            <View style={styles.flagContainer}>
+                                                <Text style={styles.flagText}>{lang.flag}</Text>
+                                            </View>
+                                            <View>
+                                                <Text style={[
+                                                    styles.optionText,
+                                                    themed.optionText,
+                                                    settings.language === lang.code && themed.activeOptionText
+                                                ]}>
+                                                    {lang.name}
+                                                </Text>
+                                                <Text style={[styles.nativeText, themed.nativeText]}>
+                                                    {lang.native}
+                                                </Text>
+                                            </View>
                                         </View>
-                                        <View>
-                                            <Text style={[
-                                                styles.optionText,
-                                                themed.optionText,
-                                                settings.language === lang.code && themed.activeOptionText
-                                            ]}>
-                                                {lang.name}
-                                            </Text>
-                                            <Text style={[styles.nativeText, themed.nativeText]}>
-                                                {lang.native}
-                                            </Text>
-                                        </View>
-                                    </View>
 
-                                    {settings.language === lang.code ? (
-                                        <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
-                                            <Check size={14} color="#FFF" strokeWidth={3} />
-                                        </View>
-                                    ) : (
-                                        <ChevronRight size={18} color={colors.textLight} />
-                                    )}
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    </Animated.View>
-                </View>
+                                        {settings.language === lang.code ? (
+                                            <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                                                <Check size={14} color="#FFF" strokeWidth={3} />
+                                            </View>
+                                        ) : (
+                                            <ChevronRight size={18} color={colors.textLight} />
+                                        )}
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </Animated.View>
+                    </View>
+                )}
             </Modal>
         </View>
     );
@@ -196,19 +191,18 @@ export default function LanguageSelector() {
 
 const styles = StyleSheet.create({
     container: {
-        position: 'absolute',
-        right: 20,
-        zIndex: 1000,
+        alignSelf: 'flex-end',
+        zIndex: 10,
     },
     glassButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingLeft: 4,
-        paddingRight: 14,
-        paddingVertical: 4,
-        borderRadius: 25,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 12,
         borderWidth: 1,
-        gap: 8,
+        gap: 6,
+        backdropFilter: 'blur(10px)', // For web support if enabled in config
         ...Platform.select({
             ios: {
                 shadowColor: '#000',
@@ -237,7 +231,11 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     backdrop: {
-        ...StyleSheet.absoluteFillObject,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
     },
     drawer: {
         borderTopLeftRadius: 30,
