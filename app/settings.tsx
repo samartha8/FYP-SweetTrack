@@ -1,6 +1,9 @@
+import { secureFetch as fetch } from '@/lib/apiClient';
 import Colors from '@/constants/colors';
+import { API_BASE_URL } from '@/constants/Api';
 import { Language, useSettings, Settings } from '@/contexts/SettingsContext';
-import { useUser } from '@/contexts/UserContext';
+import { useAuth } from '@/contexts/AuthContext';;
+import { useHealth } from '@/contexts/HealthContext';
 import { Stack, useRouter } from 'expo-router';
 import {
   Bell,
@@ -18,12 +21,22 @@ import { useTranslation } from '@/hooks/use-translation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Sparkles, Languages, Monitor, Goal } from 'lucide-react-native';
 
+const DEFAULT_CALORIE_GOAL = 2000;
+const DEFAULT_GOALS = {
+  steps: 10000,
+  water: 8,
+  sleep: 8,
+  calories: DEFAULT_CALORIE_GOAL,
+  pushEnabled: true,
+};
+
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [goals, setGoals] = useState<{ steps: number; water: number; sleep: number; calories: number; pushEnabled: boolean } | null>(null);
+  const [goals, setGoals] = useState<{ steps: number; water: number; sleep: number; calories: number; pushEnabled: boolean }>(DEFAULT_GOALS);
   const [isGoalsLoading, setGoalsLoading] = useState<boolean>(false);
   const [isRegisteringPush, setRegisteringPush] = useState<boolean>(false);
+  const [isTestingPush, setTestingPush] = useState<boolean>(false);
   const {
     settings,
     colors: palette,
@@ -31,7 +44,8 @@ export default function SettingsScreen() {
     updateSettings,
     resetSettings,
   } = useSettings();
-  const { registerPushNotifications, ensureAccessToken } = useUser();
+  const { ensureAccessToken, registerPushNotifications } = useAuth();
+  const { updateDailyGoals } = useHealth();
 
   // Local state for pending changes
   const [pendingSettings, setPendingSettings] = useState<Settings | null>(null);
@@ -92,25 +106,6 @@ export default function SettingsScreen() {
     saveButtonText: { fontSize: scale(16), fontWeight: '900' as const, letterSpacing: 0.5 },
   }), [palette, scale]);
 
-  const API_BASE_URL = (() => {
-    const normalize = (url: string) => {
-      const trimmed = url.replace(/\/$/, '');
-      return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
-    };
-
-    const envBase = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL;
-    if (envBase) return normalize(envBase);
-
-    // Default to backend dev port for web
-    if (typeof window !== 'undefined') return 'http://localhost:5000/api';
-
-    const hostOverride = process.env.EXPO_PUBLIC_API_HOST || process.env.API_HOST;
-    const port = process.env.EXPO_PUBLIC_API_PORT || process.env.API_PORT || '5000';
-    const defaultIP = '10.0.2.2';
-    const hostIP = hostOverride || (__DEV__ ? defaultIP : '192.168.0.111');
-    return `http://${hostIP}:${port}/api`;
-  })();
-
   const loadGoals = useCallback(async () => {
     try {
       setGoalsLoading(true);
@@ -120,16 +115,20 @@ export default function SettingsScreen() {
       console.log('Fetching goals from:', `${API_BASE_URL}/notifications/goals`);
 
       const res = await fetch(`${API_BASE_URL}/notifications/goals`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setGoals({
-          steps: data.goals?.steps ?? 10000,
-          water: data.goals?.water ?? 8,
-          sleep: data.goals?.sleep ?? 8,
-          calories: data.goals?.calories ?? 2000,
-          pushEnabled: data.goals?.pushEnabled ?? true,
+          steps: data.goals?.steps ?? DEFAULT_GOALS.steps,
+          water: data.goals?.water ?? DEFAULT_GOALS.water,
+          sleep: data.goals?.sleep ?? DEFAULT_GOALS.sleep,
+          calories: Number(data.goals?.calories) > 0 ? Number(data.goals.calories) : DEFAULT_CALORIE_GOAL,
+          pushEnabled: data.goals?.pushEnabled ?? DEFAULT_GOALS.pushEnabled,
         });
       }
     } catch (error) {
@@ -137,7 +136,7 @@ export default function SettingsScreen() {
     } finally {
       setGoalsLoading(false);
     }
-  }, [ensureAccessToken, API_BASE_URL]);
+  }, [ensureAccessToken]);
 
   const [isSavingGoals, setSavingGoals] = useState(false);
 
@@ -145,20 +144,51 @@ export default function SettingsScreen() {
     try {
       setSavingGoals(true);
       const token = await ensureAccessToken();
-      if (!token || !goals) return;
+      if (!token) return;
+
+      const updates = {
+        steps: Math.max(0, goals.steps || 0),
+        water: Math.max(0, goals.water || 0),
+        sleep: Math.max(0, goals.sleep || 0),
+        calories: Number(goals.calories) > 0 ? Number(goals.calories) : DEFAULT_CALORIE_GOAL,
+        pushEnabled: goals.pushEnabled,
+      };
+
+      if (updates.pushEnabled) {
+        const pushResult = await registerPushNotifications();
+        if (!pushResult.success) {
+          Alert.alert('Push not enabled', pushResult.message || 'Goal saved, but push notifications could not be enabled.');
+        }
+      }
+
       const res = await fetch(`${API_BASE_URL}/notifications/goals`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(goals),
+        body: JSON.stringify(updates),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
         Alert.alert('Error', data.message || 'Could not save goals');
         return;
       }
+      setGoals({
+        steps: data.goals?.steps ?? updates.steps,
+        water: data.goals?.water ?? updates.water,
+        sleep: data.goals?.sleep ?? updates.sleep,
+        calories: Number(data.goals?.calories) > 0 ? Number(data.goals.calories) : DEFAULT_CALORIE_GOAL,
+        pushEnabled: data.goals?.pushEnabled ?? updates.pushEnabled,
+      });
+      updateDailyGoals({
+        steps: data.goals?.steps ?? updates.steps,
+        water: data.goals?.water ?? updates.water,
+        sleep: data.goals?.sleep ?? updates.sleep,
+        calories: Number(data.goals?.calories) > 0 ? Number(data.goals.calories) : DEFAULT_CALORIE_GOAL,
+      });
       Alert.alert('Saved', 'Goals updated successfully');
     } catch (error) {
       console.error('Save goals error:', error);
@@ -176,6 +206,88 @@ export default function SettingsScreen() {
       Alert.alert('Enabled', 'Push notifications registered');
     } else {
       Alert.alert('Push not enabled', result.message || 'Try again later');
+    }
+  };
+
+  const handleNotificationToggle = async (
+    key: keyof Settings['notifications'],
+    value: boolean
+  ) => {
+    const nextNotifications = {
+      ...(pendingSettings?.notifications ?? settings.notifications),
+      [key]: value,
+    };
+    const nextSettings = {
+      ...(pendingSettings ?? settings),
+      notifications: nextNotifications,
+    };
+
+    setPendingSettings(nextSettings);
+    await updateSettings({ notifications: nextNotifications });
+
+    if (value && (key === 'enabled' || key === 'dailyReminders' || key === 'goalAlerts' || key === 'healthTips')) {
+      const result = await registerPushNotifications();
+      if (!result.success) {
+        Alert.alert('Push not enabled', result.message || 'Please allow notifications from Android settings.');
+      }
+    }
+  };
+
+  const handleToggleGoalPush = async (value: boolean) => {
+    setGoals(prev => prev ? { ...prev, pushEnabled: value } : prev);
+    if (!value) return;
+
+    setRegisteringPush(true);
+    const result = await registerPushNotifications();
+    setRegisteringPush(false);
+    if (!result.success) {
+      setGoals(prev => prev ? { ...prev, pushEnabled: false } : prev);
+      Alert.alert('Push not enabled', result.message || 'Please allow notifications from Android settings.');
+    }
+  };
+
+  const handleTestPush = async () => {
+    try {
+      setTestingPush(true);
+      const registration = await registerPushNotifications();
+      if (!registration.success) {
+        Alert.alert('Push not enabled', registration.message || 'Please allow notifications from Android settings.');
+        return;
+      }
+
+      const token = await ensureAccessToken();
+      if (!token) {
+        Alert.alert('Error', 'Please log in again.');
+        return;
+      }
+
+      const res = await fetch(`${API_BASE_URL}/notifications/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
+        },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        Alert.alert('Test failed', data.message || 'Could not send test notification.');
+        return;
+      }
+      const failedTicket = Array.isArray(data.tickets)
+        ? data.tickets.find((ticket: any) => ticket?.status === 'error')
+        : null;
+      if (failedTicket) {
+        Alert.alert('Test failed', failedTicket.message || failedTicket.details?.error || 'Expo rejected the notification.');
+        return;
+      }
+      Alert.alert('Test sent', 'Check your notification tray.');
+    } catch (error) {
+      console.error('Test push error:', error);
+      Alert.alert('Test failed', 'Could not send test notification.');
+    } finally {
+      setTestingPush(false);
     }
   };
 
@@ -224,6 +336,9 @@ export default function SettingsScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
       >
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -331,7 +446,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={pendingSettings?.notifications.enabled ?? settings.notifications.enabled}
-                onValueChange={(value) => setPendingSettings((prev: Settings | null) => prev ? { ...prev, notifications: { ...prev.notifications, enabled: value } } : null)}
+                onValueChange={(value) => handleNotificationToggle('enabled', value)}
                 trackColor={{ false: palette.border, true: palette.primary }}
                 thumbColor={palette.text}
                 accessibilityLabel="Toggle notifications"
@@ -349,7 +464,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={pendingSettings?.notifications.dailyReminders ?? settings.notifications.dailyReminders}
-                onValueChange={(value) => setPendingSettings((prev: Settings | null) => prev ? { ...prev, notifications: { ...prev.notifications, dailyReminders: value } } : null)}
+                onValueChange={(value) => handleNotificationToggle('dailyReminders', value)}
                 trackColor={{ false: palette.border, true: palette.primary }}
                 thumbColor={palette.text}
                 disabled={!(pendingSettings?.notifications.enabled ?? settings.notifications.enabled)}
@@ -371,7 +486,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={pendingSettings?.notifications.goalAlerts ?? settings.notifications.goalAlerts}
-                onValueChange={(value) => setPendingSettings((prev: Settings | null) => prev ? { ...prev, notifications: { ...prev.notifications, goalAlerts: value } } : null)}
+                onValueChange={(value) => handleNotificationToggle('goalAlerts', value)}
                 trackColor={{ false: palette.border, true: palette.primary }}
                 thumbColor={palette.text}
                 disabled={!(pendingSettings?.notifications.enabled ?? settings.notifications.enabled)}
@@ -393,7 +508,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={pendingSettings?.notifications.healthTips ?? settings.notifications.healthTips}
-                onValueChange={(value) => setPendingSettings((prev: Settings | null) => prev ? { ...prev, notifications: { ...prev.notifications, healthTips: value } } : null)}
+                onValueChange={(value) => handleNotificationToggle('healthTips', value)}
                 trackColor={{ false: palette.border, true: palette.primary }}
                 thumbColor={palette.text}
                 disabled={!(pendingSettings?.notifications.enabled ?? settings.notifications.enabled)}
@@ -419,6 +534,19 @@ export default function SettingsScreen() {
                 {isRegisteringPush ? t.settings.registering : t.settings.registerPush}
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.outlineButton,
+                { borderColor: palette.primary, opacity: isTestingPush ? 0.7 : 1 },
+              ]}
+              onPress={handleTestPush}
+              disabled={isTestingPush}
+            >
+              <Text style={[styles.outlineButtonText, { color: palette.primary }]}>
+                {isTestingPush ? 'Sending Test...' : 'Send Test Notification'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -438,13 +566,14 @@ export default function SettingsScreen() {
                     <Text style={[styles.optionDescription, themed.optionDescription]}>{t.settings.pushGoalAlertsDesc}</Text>
                   </View>
                   <Switch
-                    value={goals?.pushEnabled ?? true}
-                    onValueChange={(value) => setGoals(prev => prev ? { ...prev, pushEnabled: value } : prev)}
+                    value={goals.pushEnabled}
+                    onValueChange={handleToggleGoalPush}
                     trackColor={{ false: palette.border, true: palette.primary }}
                     thumbColor={palette.text}
+                    disabled={isRegisteringPush}
                     accessibilityLabel="Toggle push goal alerts"
                     accessibilityRole="switch"
-                    accessibilityState={{ checked: goals?.pushEnabled }}
+                    accessibilityState={{ checked: goals.pushEnabled }}
                   />
                 </View>
 
@@ -462,7 +591,9 @@ export default function SettingsScreen() {
                     <TextInput
                       style={[styles.numberInput, themed.numberInput]}
                       keyboardType="numeric"
-                      value={goals ? String((goals as any)[item.key] ?? '') : ''}
+                      returnKeyType="done"
+                      selectTextOnFocus
+                      value={String((goals as any)[item.key] ?? (DEFAULT_GOALS as any)[item.key])}
                       onChangeText={(text) => {
                         const val = parseInt(text || '0', 10) || 0;
                         setGoals(prev => prev ? { ...prev, [item.key]: val } as any : prev);
@@ -478,6 +609,19 @@ export default function SettingsScreen() {
                 >
                   <Text style={[styles.saveButtonText, themed.saveButtonText]}>
                     {isSavingGoals ? t.common.loading : t.settings.saveGoals}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.outlineButton,
+                    { borderColor: palette.primary, opacity: isTestingPush ? 0.7 : 1 },
+                  ]}
+                  onPress={handleTestPush}
+                  disabled={isTestingPush}
+                >
+                  <Text style={[styles.outlineButtonText, { color: palette.primary }]}>
+                    {isTestingPush ? 'Sending Test...' : 'Send Test Notification'}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -696,6 +840,18 @@ const styles = StyleSheet.create({
     color: Colors.textWhite,
     fontWeight: '700' as const,
     fontSize: 16,
+  },
+  outlineButton: {
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingVertical: 13,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.65)',
+  },
+  outlineButtonText: {
+    fontWeight: '800' as const,
+    fontSize: 15,
   },
   floatingSaveContainer: {
     paddingTop: 20,
