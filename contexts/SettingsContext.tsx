@@ -1,8 +1,9 @@
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useUser } from './UserContext';
+import { useAuth } from './AuthContext';;
 import { SETTINGS_URL } from '../constants/Api';
+import { secureFetch } from '../lib/apiClient';
 import BaseColors from '@/constants/colors';
 import { moderateScale, wp, hp } from '@/utils/responsive';
 
@@ -47,7 +48,7 @@ const DEFAULT_SETTINGS: Settings = {
 export const [SettingsProvider, useSettings] = createContextHook(() => {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const { ensureAccessToken } = useUser();
+  const { ensureAccessToken } = useAuth();
 
   // Dynamic Theme Generation
   const theme = useMemo(() => {
@@ -83,24 +84,10 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
         setSettings(JSON.parse(stored));
       }
 
-      // 2. Load from Backend with Retry Logic
-      let token = await ensureAccessToken();
-      if (token) {
-        let response = await fetch(SETTINGS_URL, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+      // 2. Load from Backend
+      const response = await secureFetch(SETTINGS_URL);
 
-        // Retry on 401
-        if (response.status === 401) {
-          console.log('Settings load: Token expired, refreshing...');
-          token = await ensureAccessToken(true);
-          if (token) {
-            response = await fetch(SETTINGS_URL, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-          }
-        }
-
+      if (response.ok) {
         const json = await response.json();
         if (json.success && json.settings) {
           const remoteSettings = json.settings;
@@ -127,33 +114,13 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
 
-      let token = await ensureAccessToken();
-      if (token) {
-        let response = await fetch(SETTINGS_URL, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(updates)
-        });
-
-        // Retry on 401
-        if (response.status === 401) {
-          console.log('Settings update: Token expired, refreshing...');
-          token = await ensureAccessToken(true);
-          if (token) {
-            await fetch(SETTINGS_URL, {
-              method: 'PUT',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(updates)
-            });
-          }
-        }
-      }
+      await secureFetch(SETTINGS_URL, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updates)
+      });
     } catch (error) {
       console.error('Error updating settings:', error);
     }
@@ -172,23 +139,9 @@ export const [SettingsProvider, useSettings] = createContextHook(() => {
       setSettings(DEFAULT_SETTINGS);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_SETTINGS));
 
-      let token = await ensureAccessToken();
-      if (token) {
-        let response = await fetch(`${SETTINGS_URL}/reset`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (response.status === 401) {
-          token = await ensureAccessToken(true);
-          if (token) {
-            await fetch(`${SETTINGS_URL}/reset`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-          }
-        }
-      }
+      await secureFetch(`${SETTINGS_URL}/reset`, {
+        method: 'POST'
+      });
     } catch (error) {
       console.error('Error resetting settings:', error);
     }
