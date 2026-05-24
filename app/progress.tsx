@@ -69,6 +69,10 @@ export default function ProgressScreen() {
   const macroGoalProtein = Math.round((calorieGoal * ((activeDietDetails?.macroRatio?.protein || 25) / 100)) / 4);
   const macroGoalCarbs = Math.round((calorieGoal * ((activeDietDetails?.macroRatio?.carbs || 50) / 100)) / 4);
   const macroGoalFat = Math.round((calorieGoal * ((activeDietDetails?.macroRatio?.fat || 25) / 100)) / 9);
+  const formatMacroGrams = (value: number) => {
+    const safeValue = Number(value) || 0;
+    return safeValue >= 10 ? Math.round(safeValue).toString() : safeValue.toFixed(1);
+  };
 
   return (
     <View style={styles.container}>
@@ -121,9 +125,9 @@ export default function ProgressScreen() {
         {/* Macros Grid */}
         <View style={styles.macroGrid}>
           {[
-            { icon: Wheat, label: 'Carbs', value: `${Math.round(todayNutrition.carbs)}/${macroGoalCarbs}g`, color: '#10B981', delay: 100 },
-            { icon: Beef, label: 'Protein', value: `${Math.round(todayNutrition.protein)}/${macroGoalProtein}g`, color: '#EF4444', delay: 200 },
-            { icon: Droplets, label: 'Fat', value: `${Math.round(todayNutrition.fat)}/${macroGoalFat}g`, color: '#3B82F6', delay: 300 },
+            { icon: Wheat, label: 'Carbs', value: formatMacroGrams(todayNutrition.carbs), goal: macroGoalCarbs, color: '#10B981', delay: 100 },
+            { icon: Beef, label: 'Protein', value: formatMacroGrams(todayNutrition.protein), goal: macroGoalProtein, color: '#EF4444', delay: 200 },
+            { icon: Droplets, label: 'Fat', value: formatMacroGrams(todayNutrition.fat), goal: macroGoalFat, color: '#3B82F6', delay: 300 },
           ].map((macro, idx) => (
             <Animated.View 
               key={idx} 
@@ -133,7 +137,10 @@ export default function ProgressScreen() {
               <View style={[styles.macroIconBox, { backgroundColor: macro.color + '15' }]}>
                 <macro.icon size={22} color={macro.color} strokeWidth={2.5} />
               </View>
-              <Text style={themed.macroValue}>{macro.value}</Text>
+              <View style={styles.macroValueRow}>
+                <Text style={themed.macroValue}>{macro.value}</Text>
+                <Text style={styles.macroGoalText}>/{macro.goal}g</Text>
+              </View>
               <Text style={themed.macroLabel}>{macro.label}</Text>
             </Animated.View>
           ))}
@@ -302,7 +309,8 @@ const styles = StyleSheet.create({
   },
   macroCard: {
     flex: 1,
-    padding: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 12,
     alignItems: 'center',
   },
   macroIconBox: {
@@ -312,6 +320,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  macroValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    minHeight: 34,
+  },
+  macroGoalText: {
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '800',
   },
   chartCard: {
     padding: 28,
