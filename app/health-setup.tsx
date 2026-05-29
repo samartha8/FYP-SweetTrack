@@ -70,6 +70,9 @@ type HealthFormData = {
   hba1cSource?: 'auto' | 'report' | 'manual';
   bloodGlucoseEstimated?: string;
   glucoseSource?: 'auto' | 'report' | 'manual';
+  bpSource?: 'report' | 'manual';
+  bmiSource?: 'report' | 'manual';
+  demographicsSource?: 'report' | 'manual';
 };
 
 type Step = 'features' | 'results' | 'personal' | 'age' | 'lifestyle' | 'medical' | 'review';
@@ -219,15 +222,18 @@ export default function HealthSetupScreen() {
           }
         }
 
-        const w = safeStr(d.weight); if (w) mappedData.weight = w;
-        const h = safeStr(d.height); if (h) mappedData.height = h;
-        const s = safeStr(d.sex); if (s) mappedData.sex = s;
+        const w = safeStr(d.weight); if (w) { mappedData.weight = w; mappedData.demographicsSource = 'report'; }
+        const h = safeStr(d.height); if (h) { mappedData.height = h; mappedData.demographicsSource = 'report'; }
+        if (w && h) mappedData.bmiSource = 'report';
+        const s = safeStr(d.sex); if (s) { mappedData.sex = s; mappedData.demographicsSource = 'report'; }
+        if (mappedData.age) mappedData.demographicsSource = 'report';
         
         // Safe BP Normalization
         const bpRaw = d.bloodPressure !== undefined ? d.bloodPressure : d.highBP;
         const bpS = safeStr(bpRaw);
         if (bpS) {
           mappedData.highBP = (bpS === '1' || bpS.toLowerCase() === 'high' || bpS.toLowerCase() === 'true') ? '1' : '0';
+          mappedData.bpSource = 'report';
         }
 
         // Safe Cholesterol Normalization
@@ -248,7 +254,9 @@ export default function HealthSetupScreen() {
         Object.keys(mappedData).forEach((key) => {
           const k = key as keyof HealthFormData;
           const currentVal = String(formData[k] || '').trim();
-          if (!currentVal || currentVal === '' || currentVal === 'null') {
+          const isSourceField = ['hba1cSource', 'glucoseSource', 'bpSource', 'bmiSource', 'demographicsSource'].includes(key);
+          const isClinicalReportValue = ['hba1cEstimated', 'bloodGlucoseEstimated'].includes(key);
+          if (isSourceField || isClinicalReportValue || !currentVal || currentVal === '' || currentVal === 'null') {
             updateData[k] = mappedData[k] as any;
             newlyFoundCount++;
           }
