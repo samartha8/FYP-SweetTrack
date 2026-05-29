@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,8 @@ import { useAuth } from '@/contexts/AuthContext';;
 import { useTheme } from '@/contexts/SettingsContext';
 import { useTranslation } from '@/hooks/use-translation';
 import { LinearGradient } from 'expo-linear-gradient';
+import { secureFetch } from '@/lib/apiClient';
+import { AUTH_URL, HEALTH_URL } from '@/constants/Api';
 
 
 export default function EditProfileScreen() {
@@ -27,6 +29,7 @@ export default function EditProfileScreen() {
   const { t } = useTranslation();
   const { user, updateUser } = useAuth();
   const { colors, scale } = useTheme();
+  const manualLabEditRef = useRef(false);
 
   const LOCALIZED_AGE_GROUPS = useMemo(() => [
     { value: '1', label: '18-24' },
@@ -116,6 +119,10 @@ export default function EditProfileScreen() {
 
   // ✅ AUTO-CALCULATION LOGIC: Update estimates when lifestyle factors change
   useEffect(() => {
+    if (manualLabEditRef.current || formData.glucose || formData.hba1c) {
+      return;
+    }
+
     const h = parseFloat(formData.height);
     const w = parseFloat(formData.weight);
     const age = parseInt(formData.age);
@@ -206,7 +213,31 @@ export default function EditProfileScreen() {
         hba1cEstimated: formData.hba1c ? parseFloat(formData.hba1c) : undefined,
       };
 
-      await updateUser(updates);
+      const [profileResponse, healthResponse] = await Promise.all([
+        secureFetch(`${AUTH_URL}/profile`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: updates.name, email: updates.email }),
+        }),
+        secureFetch(HEALTH_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates),
+        }),
+      ]);
+
+      if (!profileResponse.ok || !healthResponse.ok) {
+        const profileError = !profileResponse.ok ? await profileResponse.text() : '';
+        const healthError = !healthResponse.ok ? await healthResponse.text() : '';
+        throw new Error(profileError || healthError || 'Profile update failed');
+      }
+
+      const profileJson = await profileResponse.json();
+      const healthJson = await healthResponse.json();
+      await updateUser({
+        ...(profileJson.user || {}),
+        ...(healthJson.healthData || updates),
+      });
 
       // ✅ Explicit Success Message
       Alert.alert(
@@ -587,7 +618,10 @@ export default function EditProfileScreen() {
                 <TextInput
                   style={[styles.input, themed.input, { marginTop: 8 }]}
                   value={formData.glucose}
-                  onChangeText={(text) => setFormData({ ...formData, glucose: text })}
+                  onChangeText={(text) => {
+                    manualLabEditRef.current = true;
+                    setFormData({ ...formData, glucose: text });
+                  }}
                   placeholder={t.profile.editScreen.glucosePlaceholder}
                   keyboardType="numeric"
                   placeholderTextColor={colors.textLight}
@@ -604,7 +638,10 @@ export default function EditProfileScreen() {
                 <TextInput
                   style={[styles.input, themed.input, { marginTop: 8 }]}
                   value={formData.hba1c}
-                  onChangeText={(text) => setFormData({ ...formData, hba1c: text })}
+                  onChangeText={(text) => {
+                    manualLabEditRef.current = true;
+                    setFormData({ ...formData, hba1c: text });
+                  }}
                   placeholder={t.profile.editScreen.hba1cPlaceholder}
                   keyboardType="numeric"
                   placeholderTextColor={colors.textLight}
