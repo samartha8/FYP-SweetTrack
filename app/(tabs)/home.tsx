@@ -67,6 +67,8 @@ export default function HomeScreen() {
       pregnancies: Number(getHealthVal(anyUser, 'pregnancies') || 0),
       height: Number(getHealthVal(anyUser, 'height') || 0),
       weight: Number(getHealthVal(anyUser, 'weight') || 0),
+      bloodGlucoseEstimated: Number(getHealthVal(anyUser, 'bloodGlucoseEstimated', 'glucose') || 0),
+      hba1cEstimated: Number(getHealthVal(anyUser, 'hba1cEstimated', 'hba1c') || 0),
     };
   }, [user, getHealthVal]);
 
@@ -93,7 +95,9 @@ export default function HomeScreen() {
       isSame(currentHealth.heartDiseaseOrAttack, prevData.heartDiseaseOrAttack ?? prevData.heartDisease) &&
       isSame(currentHealth.pregnancies, prevData.pregnancies) &&
       isSame(currentHealth.height, prevData.height ?? currentHealth.height) &&
-      isSame(currentHealth.weight, prevData.weight ?? currentHealth.weight)
+      isSame(currentHealth.weight, prevData.weight ?? currentHealth.weight) &&
+      isSame(currentHealth.bloodGlucoseEstimated, prevData.bloodGlucoseEstimated ?? prevData.glucose) &&
+      isSame(currentHealth.hba1cEstimated, prevData.hba1cEstimated ?? prevData.hba1c)
     );
   }, [predictionData.inputData, currentHealth]);
 
