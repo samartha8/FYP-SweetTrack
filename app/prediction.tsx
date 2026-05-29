@@ -297,9 +297,18 @@ export default function PredictionScreen() {
               updatePayload[field] = (field === 'sex' || field === 'highBP' || field === 'highChol' || field === 'genHlth' || field === 'age') 
                 ? Math.round(processedValue) 
                 : processedValue;
+
+              if (field === 'hba1cEstimated') updatePayload.hba1cSource = 'report';
+              if (field === 'bloodGlucoseEstimated') updatePayload.glucoseSource = 'report';
+              if (field === 'highBP') updatePayload.bpSource = 'report';
+              if (['age', 'sex', 'height', 'weight'].includes(field)) updatePayload.demographicsSource = 'report';
             }
           }
         });
+
+        if (updatePayload.height !== undefined && updatePayload.weight !== undefined) {
+          updatePayload.bmiSource = 'report';
+        }
         
         // If we found ANY clinical or health data, update the record
         if (Object.keys(updatePayload).length > 0) {
@@ -326,7 +335,7 @@ export default function PredictionScreen() {
              const updatedUserJson = await res.json();
              // IMPORTANT: Sync local state so runPrediction uses the NEW lab values
              if (updatedUserJson.success) {
-                await updateUser(updatedUserJson.user);
+                await updateUser(updatedUserJson.healthData);
              }
            }
            
@@ -398,6 +407,8 @@ export default function PredictionScreen() {
       pregnancies: isSame(currentHealth.pregnancies, prevData.pregnancies),
       height: isSame(currentHealth.height, prevData.height ?? currentHealth.height),
       weight: isSame(currentHealth.weight, prevData.weight ?? currentHealth.weight),
+      bloodGlucoseEstimated: isSame(currentHealth.bloodGlucoseEstimated, prevData.bloodGlucoseEstimated ?? prevData.glucose),
+      hba1cEstimated: isSame(currentHealth.hba1cEstimated, prevData.hba1cEstimated ?? prevData.hba1c),
     };
 
     if (__DEV__) {
@@ -417,6 +428,29 @@ export default function PredictionScreen() {
 
   const tRiskLevel = riskLevel === 'High Risk' ? t.home.riskHigh : riskLevel === 'Medium Risk' ? t.home.riskMedium : t.home.riskLow;
   const riskColor = riskLevel === 'High Risk' ? colors.risk.high : riskLevel === 'Medium Risk' ? colors.risk.moderate : colors.risk.low;
+  const isClinicalAnalysis = data?.mode === 'CLINICAL' || (data?.confidenceScore ?? 0) > 0 || hasClinicalData;
+  const upToDateMessage = isClinicalAnalysis
+    ? 'Analysis reflects your latest lab report.'
+    : t.prediction.factorsDesc;
+  const firstValidNumber = (...values: any[]) => {
+    for (const value of values) {
+      const numericValue = Number(value);
+      if (value !== undefined && value !== null && value !== '' && !Number.isNaN(numericValue)) {
+        return numericValue;
+      }
+    }
+    return 0;
+  };
+  const displayedGlucose = firstValidNumber(
+    data?.inputData?.bloodGlucoseEstimated,
+    data?.inputData?.glucose,
+    currentHealth?.bloodGlucoseEstimated
+  );
+  const displayedHbA1c = firstValidNumber(
+    data?.inputData?.hba1cEstimated,
+    data?.inputData?.hba1c,
+    currentHealth?.hba1cEstimated
+  );
 
   return (
     <View style={[styles.container, themed.container]}>
@@ -603,7 +637,7 @@ export default function PredictionScreen() {
           )}
           {isUnchanged && (
             <Text style={[styles.disabledInfoText, themed.textSecondary]}>
-              {t.prediction.factorsDesc}
+              {upToDateMessage}
             </Text>
           )}
         </View>
@@ -641,7 +675,14 @@ export default function PredictionScreen() {
             <View style={[styles.factorItem, themed.factorCard]}>
               <Text style={[styles.factorLabel, themed.factorLabel]}>{t.prediction.glucoseEst}</Text>
               <Text style={[styles.factorValue, themed.factorValue]}>
-                {(currentHealth?.bloodGlucoseEstimated || data?.inputData?.glucose || 0).toFixed(0)}
+                {displayedGlucose.toFixed(0)}
+              </Text>
+            </View>
+            {/* 2b. HbA1c */}
+            <View style={[styles.factorItem, themed.factorCard]}>
+              <Text style={[styles.factorLabel, themed.factorLabel]}>HbA1c (%)</Text>
+              <Text style={[styles.factorValue, themed.factorValue]}>
+                {displayedHbA1c.toFixed(2)}
               </Text>
             </View>
             {/* 3. Blood Pressure */}
