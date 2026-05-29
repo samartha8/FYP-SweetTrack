@@ -485,13 +485,13 @@ export default function PredictionScreen() {
             <View style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: 15, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Text style={{ color: '#64748B', fontSize: scale(10), fontWeight: '800', letterSpacing: 0.5 }}>CLINICAL DATA CONFIDENCE</Text>
-                  <Text style={{ color: '#FFF', fontSize: scale(10), fontWeight: '900' }}>{Math.round(data?.confidenceScore || 70)}%</Text>
+                  <Text style={{ color: '#FFF', fontSize: scale(10), fontWeight: '900' }}>{Math.round(data?.confidenceScore ?? 70)}%</Text>
               </View>
               <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
                   <LinearGradient 
                     colors={[colors.primary, '#34D399'] as any} 
                     start={{x:0, y:0}} end={{x:1, y:0}}
-                    style={{ height: '100%', width: `${data?.confidenceScore || 70}%` }} 
+                    style={{ height: '100%', width: `${data?.confidenceScore ?? 70}%` }} 
                   />
               </View>
             </View>
