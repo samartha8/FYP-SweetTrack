@@ -88,6 +88,9 @@ export default function DailyReportScreen() {
     
     if (isDownwardSpiral) {
         const before = totalImpactNumber;
+        if (totalImpactNumber > 0) {
+            totalImpactNumber = -totalImpactNumber;
+        }
         totalImpactNumber = totalImpactNumber * 1.5;
     }
     
@@ -200,7 +203,7 @@ export default function DailyReportScreen() {
                 </div>
                 <div class="metric-card">
                   <div class="metric-label">HYDRATION</div>
-                  <div class="metric-value">${healthMetrics.water || 0} Glasses</div>
+                  <div class="metric-value">${healthMetrics.water || 0} Glasses (${(healthMetrics.water || 0) * 250} ml)</div>
                 </div>
               </div>
             </div>
@@ -365,7 +368,7 @@ export default function DailyReportScreen() {
                 <Text style={styles.biomarkerLabel}>Hydration</Text>
               </View>
               <Text style={styles.biomarkerValue}>{healthMetrics.water || 0}</Text>
-              <Text style={styles.biomarkerUnit}>Glasses</Text>
+              <Text style={styles.biomarkerUnit}>Glasses ({ (healthMetrics.water || 0) * 250 } ml)</Text>
               <View style={styles.biomarkerLine} />
             </View>
           </View>
