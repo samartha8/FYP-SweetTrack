@@ -76,7 +76,7 @@ export default function WellnessScreen() {
       type: 'calories' as MetricType,
       icon: Flame,
       label: t.wellness.calories,
-      value: healthMetrics.calories || 0,
+      value: Math.round((healthMetrics.steps || 0) * 0.04),
       consumed: todayNutrition.calories || 0,
       goal: dailyGoals.calories || 2000,
       unit: t.wellness.unitCalories,
@@ -84,6 +84,51 @@ export default function WellnessScreen() {
       accent: '#FFF',
     },
   ], [healthMetrics, dailyGoals, t, todayNutrition.calories]);
+
+  const activeInsight = useMemo(() => {
+    const stepsGoal = dailyGoals.steps || 10000;
+    const waterGoal = dailyGoals.water || 8;
+    const sleepGoal = dailyGoals.sleep || 8;
+
+    const stepsVal = healthMetrics.steps || 0;
+    const waterVal = healthMetrics.water || 0;
+    const sleepVal = healthMetrics.sleep || 0;
+
+    const stepsPct = stepsVal / stepsGoal;
+    const waterPct = waterVal / waterGoal;
+    const sleepPct = sleepVal / sleepGoal;
+
+    if (stepsPct < 0.6 && stepsPct <= waterPct && stepsPct <= sleepPct) {
+      return {
+        title: "AI Activity Insight",
+        desc: "Your steps are below 6,000. A brisk 15-minute walk post-meal can reduce postprandial glucose spikes by up to 30%.",
+        color: '#FFB700',
+        icon: Activity,
+      };
+    }
+    if (waterPct < 0.75 && waterPct <= stepsPct && waterPct <= sleepPct) {
+      return {
+        title: "AI Hydration Insight",
+        desc: "Increase your water intake. Proper hydration helps kidneys filter excess glucose and maintains baseline metabolic rate.",
+        color: '#00B4DB',
+        icon: Droplet,
+      };
+    }
+    if (sleepPct < 0.85 && sleepPct <= stepsPct && sleepPct <= waterPct) {
+      return {
+        title: "AI Sleep Insight",
+        desc: "Aim for 8 hours tonight. Getting less than 7 hours of sleep increases cortisol, which elevates fasting blood glucose.",
+        color: '#8E2DE2',
+        icon: Moon,
+      };
+    }
+    return {
+      title: "AI Synergy Insight",
+      desc: "Excellent discipline! A balanced routine of steps, consistent sleep, and hydration significantly optimizes insulin sensitivity.",
+      color: '#10B981',
+      icon: Sparkles,
+    };
+  }, [healthMetrics.steps, healthMetrics.water, healthMetrics.sleep, dailyGoals]);
 
   const handleOpenModal = (type: MetricType) => {
     setSelectedMetric(type);
@@ -238,9 +283,16 @@ export default function WellnessScreen() {
                         </Text>
                       </View>
                     ) : (
-                      <View style={styles.mainValueRow}>
-                        <Text style={[styles.largeValue, { fontSize: scale(48) }]}>{metric.value}</Text>
-                        <Text style={[styles.goalText, { fontSize: scale(18) }]}>/ {metric.goal} {metric.unit}</Text>
+                      <View>
+                        <View style={styles.mainValueRow}>
+                          <Text style={[styles.largeValue, { fontSize: scale(48) }]}>{metric.value}</Text>
+                          <Text style={[styles.goalText, { fontSize: scale(18) }]}>/ {metric.goal} {metric.unit}</Text>
+                        </View>
+                        {metric.type === 'water' && (
+                          <Text style={{ color: '#FFF', opacity: 0.85, fontSize: scale(14), fontWeight: '700', marginTop: -10, marginBottom: 15 }}>
+                            {Math.round(metric.value * 250)} ml / {Math.round(metric.goal * 250)} ml
+                          </Text>
+                        )}
                       </View>
                     )}
 
@@ -274,15 +326,15 @@ export default function WellnessScreen() {
               );
             })}
 
-            {/* Bottom Status Tips */}
+            {/* Dynamic AI Wellness Insight Card */}
             <Animated.View entering={FadeIn} style={[styles.weeklySummary, { backgroundColor: '#FFF' }]}>
-              <View style={[styles.summaryIcon, { backgroundColor: colors.primary + '15' }]}>
-                <TrendingUp size={24} color={colors.primary} />
+              <View style={[styles.summaryIcon, { backgroundColor: activeInsight.color + '15' }]}>
+                <activeInsight.icon size={24} color={activeInsight.color} />
               </View>
               <View style={styles.summaryText}>
-                <Text style={[styles.summaryTitle, { color: colors.text, fontSize: scale(18) }]}>{t.wellness.weeklySummary}</Text>
-                <Text style={[styles.summaryDesc, { color: colors.textSecondary, fontSize: scale(14) }]}>
-                  {t.wellness.keepTracking}
+                <Text style={[styles.summaryTitle, { color: colors.text, fontSize: scale(16), fontWeight: '700' }]}>{activeInsight.title}</Text>
+                <Text style={[styles.summaryDesc, { color: colors.textSecondary, fontSize: scale(13), lineHeight: 18, marginTop: 4 }]}>
+                  {activeInsight.desc}
                 </Text>
               </View>
             </Animated.View>
