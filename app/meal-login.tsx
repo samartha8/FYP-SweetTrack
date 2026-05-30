@@ -447,9 +447,8 @@ export default function MealLogScreen() {
 
     try {
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: 'images' as any,
-        allowsEditing: true,
-        aspect: [4, 3],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
         quality: 0.8,
       });
 
@@ -469,9 +468,8 @@ export default function MealLogScreen() {
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images' as any,
-        allowsEditing: true,
-        aspect: [4, 3],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
         quality: 0.8,
       });
 
