@@ -58,6 +58,9 @@ export default function ProgressImpactScreen() {
         
         if (isDownwardSpiral) {
             const before = totalImpactNumber;
+            if (totalImpactNumber > 0) {
+                totalImpactNumber = -totalImpactNumber;
+            }
             totalImpactNumber = totalImpactNumber * 1.5;
             spiralPenalty = totalImpactNumber - before;
         }
