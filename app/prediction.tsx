@@ -430,8 +430,8 @@ export default function PredictionScreen() {
   const riskColor = riskLevel === 'High Risk' ? colors.risk.high : riskLevel === 'Medium Risk' ? colors.risk.moderate : colors.risk.low;
   const isClinicalAnalysis = data?.mode === 'CLINICAL' || (data?.confidenceScore ?? 0) > 0 || hasClinicalData;
   const upToDateMessage = isClinicalAnalysis
-    ? 'Analysis reflects your latest lab report.'
-    : t.prediction.factorsDesc;
+    ? 'Analysis reflects your latest lab report. You can update your clinical data in Edit Profile to run a new analysis.'
+    : (t.prediction.factorsDesc || 'Your latest health profile has already been analyzed.') + '\nUpdate your details in Edit Profile to re-predict.';
   const firstValidNumber = (...values: any[]) => {
     for (const value of values) {
       const numericValue = Number(value);
