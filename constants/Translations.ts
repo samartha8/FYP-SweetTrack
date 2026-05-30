@@ -53,7 +53,7 @@ export const translations = {
             pts: 'PTS',
             dayStreak: 'DAY STREAK',
             tipStayHydrated: 'Stay Hydrated',
-            tipStayHydratedDesc: 'Drink at least 8 glasses of water daily to maintain optimal health and energy levels.',
+            tipStayHydratedDesc: 'Drink at least 2000 ml (8 glasses) of water daily to maintain optimal health and energy levels.',
         },
         mealLog: {
             uploadPrompt: 'Scan or Upload Meal',
@@ -291,9 +291,9 @@ export const translations = {
         dietSuggestions: {
             header: 'Diet Suggestions',
             introTitle: 'AI-Powered Diet Plans',
-            introText: 'Choose a personalized diet plan based on your health goals and conditions. All meal recommendations will be tailored to your selected plan.',
-            availablePlans: 'Available Plans',
-            selectPlanSubtitle: 'Select a plan that matches your wellness goals',
+            introText: 'Explore personalized diet plans based on your health goals and conditions. These are AI-generated suggestions to guide your nutritional choices.',
+            availablePlans: 'Suggested Plans',
+            selectPlanSubtitle: 'Explore plans that match your wellness goals',
             note: 'Note',
             noteText: 'These diet plans are AI-generated suggestions based on general nutritional guidelines. Please consult with a healthcare professional before making significant dietary changes, especially if you have existing health conditions.',
             active: 'Active',
@@ -598,7 +598,7 @@ export const translations = {
             pts: 'अंक',
             dayStreak: 'दिन स्ट्रिक',
             tipStayHydrated: 'हाइड्रेटेड रहनुहोस्',
-            tipStayHydratedDesc: 'तपाईंको इष्टतम स्वास्थ्य र ऊर्जा स्तर कायम राख्न दैनिक कम्तिमा ८ गिलास पानी पिउनुहोस्।',
+            tipStayHydratedDesc: 'तपाईंको इष्टतम स्वास्थ्य र ऊर्जा स्तर कायम राख्न दैनिक कम्तिमा २००० मिलीलीटर (८ गिलास) पानी पिउनुहोस्।',
         },
         mealLog: {
             uploadPrompt: 'खाना स्क्यान वा अपलोड गर्नुहोस्',
@@ -1143,7 +1143,7 @@ export const translations = {
             pts: 'ポイント',
             dayStreak: '日間の継続',
             tipStayHydrated: 'こまめな水分補給',
-            tipStayHydratedDesc: '健康的なエネルギーを維持するために、1日少なくとも8杯の水を飲みましょう。',
+            tipStayHydratedDesc: '健康的なエネルギーを維持するために、1日少なくとも2000 ml（8杯）の水を飲みましょう。',
         },
         mealLog: {
             uploadPrompt: '食事のスキャンまたはアップロード',
