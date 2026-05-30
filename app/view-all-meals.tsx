@@ -279,7 +279,7 @@ export default function ViewAllDashboardScreen() {
                 <View key={meal.id} style={[styles.mealCard, themed.mealCard]}>
                   {meal.imageUri ? (
                     <Image
-                      source={{ uri: meal.imageUri }}
+                      source={{ uri: fixupImageUrl(meal.imageUri) }}
                       style={[styles.mealImage, themed.mealImage]}
                       resizeMode="cover"
                     />
