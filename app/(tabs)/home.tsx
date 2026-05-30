@@ -290,7 +290,7 @@ export default function HomeScreen() {
                 <ShieldCheck size={24} color="#10B981" />
               </View>
               <View style={styles.synergyText}>
-                <Text style={styles.synergyTitleText}>Metabolic Mitigation</Text>
+                <Text style={styles.synergyTitleText}>Metabolic Synergy</Text>
                 <Text style={styles.synergyDescText}>
                   {healthMetrics.steps >= 8000
                     ? "Active: Reducing diabetic risk factors."
@@ -304,11 +304,11 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Metabolic Pulse Section (Gated by Google Fit) */}
+        {/* Wellness Tracker Section (Gated by Google Fit) */}
         {!isGoogleFitConnected ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionHeading}>Metabolic Pulse</Text>
+              <Text style={styles.sectionHeading}>Wellness Tracker</Text>
             </View>
             <TouchableOpacity 
               activeOpacity={0.9} 
@@ -336,7 +336,7 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionHeading}>Metabolic Pulse</Text>
+              <Text style={styles.sectionHeading}>Wellness Tracker</Text>
               <TouchableOpacity onPress={() => router.push('/(tabs)/wellness' as any)}>
                 <Text style={styles.viewMoreText}>{t.common.viewAll}</Text>
               </TouchableOpacity>
@@ -356,7 +356,9 @@ export default function HomeScreen() {
                         <item.icon size={18} color="#FFF" />
                       </View>
                       <Text style={styles.pulseValue}>{item.value}</Text>
-                      <Text style={styles.pulseLabel}>{item.label}</Text>
+                      <Text style={styles.pulseLabel}>
+                        {item.label} {item.label === 'Water' && <Text style={{ fontSize: 9, opacity: 0.8 }}>({Math.round(item.value * 250)} ml)</Text>}
+                      </Text>
                       <View style={styles.pulseProgressBar}>
                         <View style={[styles.pulseProgressFill, { width: `${progress}%` }]} />
                       </View>
