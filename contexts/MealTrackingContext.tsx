@@ -55,10 +55,9 @@ const API_BASE_URL = MEAL_URL;
 
 export const fixupImageUrl = (url?: string) => {
   if (!url || !url.startsWith('http')) return url;
-  // Use the host from the centralized MEAL_URL if possible, otherwise use local-first fallback
+  const protocol = API_BASE_URL.startsWith('https') ? 'https' : 'http';
   const apiHost = API_BASE_URL.split('/')[2];
-  // Replace anything between http:// and the first /uploads or similar path with current apiHost
-  return url.replace(/https?:\/\/([^\/]+)/, `http://${apiHost}`);
+  return url.replace(/https?:\/\/([^\/]+)/, `${protocol}://${apiHost}`);
 };
 
 export const [MealTrackingProvider, useMealTracking] = createContextHook(() => {
