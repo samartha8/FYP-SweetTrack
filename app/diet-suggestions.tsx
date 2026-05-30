@@ -123,18 +123,7 @@ export default function DietSuggestionsScreen() {
           <View style={styles.planHeaderText}>
             <View style={styles.planTitleRow}>
               <Text style={[styles.planName, themed.planName]}>{t.dietSuggestions.plans[plan.id as keyof typeof t.dietSuggestions.plans] || plan.name}</Text>
-              {isSelected && (
-                <View style={[styles.selectedBadge, { backgroundColor: plan.color }]}>
-                  <CheckCircle2 size={14} color={colors.textWhite} strokeWidth={2.5} />
-                  <Text style={[styles.selectedBadgeText, themed.selectedBadgeText]}>{t.dietSuggestions.active}</Text>
-                </View>
-              )}
-              {plan.id === recommendedPlanId && !isSelected && (
-                <View style={[styles.selectedBadge, { backgroundColor: colors.warning + '20' }]}>
-                  <Sparkles size={12} color={colors.warning} strokeWidth={2.5} />
-                  <Text style={[styles.selectedBadgeText, themed.selectedBadgeText, { color: colors.warning }]}>AI Recommended</Text>
-                </View>
-              )}
+
             </View>
             <Text style={[styles.planDescription, themed.planDescription]} numberOfLines={2}>
               {t.dietSuggestions.planDescriptions[plan.id as keyof typeof t.dietSuggestions.planDescriptions] || plan.description}
@@ -210,16 +199,6 @@ export default function DietSuggestionsScreen() {
                 </View>
               ))}
             </View>
-
-            {!isSelected && (
-              <TouchableOpacity
-                style={[styles.selectButton, { backgroundColor: plan.color }]}
-                onPress={() => handleSelectPlan(plan.id)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.selectButtonText, themed.selectButtonText]}>{t.dietSuggestions.selectThisPlan}</Text>
-              </TouchableOpacity>
-            )}
           </View>
         )}
       </View>
